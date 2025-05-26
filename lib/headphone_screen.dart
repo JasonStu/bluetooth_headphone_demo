@@ -23,17 +23,17 @@ class HeadphoneScreen extends StatelessWidget {
                 // 连接状态卡片
                 _buildConnectionCard(bluetoothManager),
                 SizedBox(height: 16),
-                
+
                 // 电池状态卡片
                 if (bluetoothManager.isConnected) ...[
                   _buildBatteryCard(bluetoothManager),
                   SizedBox(height: 16),
                 ],
-                
+
                 // 设备扫描卡片
                 _buildScanCard(bluetoothManager),
                 SizedBox(height: 16),
-                
+
                 // 发现的设备列表
                 _buildDeviceList(bluetoothManager),
               ],
@@ -140,7 +140,7 @@ class HeadphoneScreen extends StatelessWidget {
   Widget _buildBatteryCard(BluetoothManager bluetoothManager) {
     Color batteryColor;
     IconData batteryIcon;
-    
+
     if (bluetoothManager.batteryLevel > 60) {
       batteryColor = Colors.green;
       batteryIcon = Icons.battery_full;
@@ -241,7 +241,8 @@ class HeadphoneScreen extends StatelessWidget {
               children: [
                 Icon(
                   bluetoothManager.isScanning ? Icons.radar : Icons.search,
-                  color: bluetoothManager.isScanning ? Colors.blue : Colors.grey,
+                  color:
+                      bluetoothManager.isScanning ? Colors.blue : Colors.grey,
                   size: 28,
                 ),
                 SizedBox(width: 12),
@@ -257,7 +258,9 @@ class HeadphoneScreen extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        bluetoothManager.isScanning ? '正在扫描附近的蓝牙设备...' : '点击开始扫描蓝牙设备',
+                        bluetoothManager.isScanning
+                            ? '正在扫描附近的蓝牙设备...'
+                            : '点击开始扫描蓝牙设备',
                         style: TextStyle(
                           color: Colors.grey.shade600,
                           fontSize: 14,
@@ -276,10 +279,14 @@ class HeadphoneScreen extends StatelessWidget {
                     onPressed: bluetoothManager.isScanning
                         ? () => bluetoothManager.stopScan()
                         : () => bluetoothManager.startScan(),
-                    icon: Icon(bluetoothManager.isScanning ? Icons.stop : Icons.search),
+                    icon: Icon(bluetoothManager.isScanning
+                        ? Icons.stop
+                        : Icons.search),
                     label: Text(bluetoothManager.isScanning ? '停止扫描' : '开始扫描'),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: bluetoothManager.isScanning ? Colors.red : Colors.blue,
+                      backgroundColor: bluetoothManager.isScanning
+                          ? Colors.red
+                          : Colors.blue,
                       foregroundColor: Colors.white,
                     ),
                   ),
@@ -353,9 +360,10 @@ class HeadphoneScreen extends StatelessWidget {
             itemCount: bluetoothManager.discoveredDevices.length,
             separatorBuilder: (context, index) => Divider(height: 1),
             itemBuilder: (context, index) {
-              BluetoothDevice device = bluetoothManager.discoveredDevices[index];
+              BluetoothDevice device =
+                  bluetoothManager.discoveredDevices[index];
               bool isConnected = bluetoothManager.connectedDevice == device;
-              
+
               return ListTile(
                 leading: Icon(
                   _getDeviceIcon(device.platformName),
@@ -365,7 +373,8 @@ class HeadphoneScreen extends StatelessWidget {
                 title: Text(
                   device.platformName.isNotEmpty ? device.platformName : '未知设备',
                   style: TextStyle(
-                    fontWeight: isConnected ? FontWeight.bold : FontWeight.normal,
+                    fontWeight:
+                        isConnected ? FontWeight.bold : FontWeight.normal,
                     color: isConnected ? Colors.green : null,
                   ),
                 ),
@@ -386,9 +395,11 @@ class HeadphoneScreen extends StatelessWidget {
                 trailing: isConnected
                     ? Icon(Icons.check_circle, color: Colors.green)
                     : ElevatedButton(
-                        onPressed: bluetoothManager.connectionState == BluetoothConnectionState.connecting
+                        onPressed: bluetoothManager.connectionState ==
+                                BluetoothConnectionState.connecting
                             ? null
-                            : () => _connectToDevice(context, bluetoothManager, device),
+                            : () => _connectToDevice(
+                                context, bluetoothManager, device),
                         child: Text('连接'),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.blue,
@@ -419,45 +430,72 @@ class HeadphoneScreen extends StatelessWidget {
     }
   }
 
-  Future<void> _connectToDevice(BuildContext context, BluetoothManager bluetoothManager, BluetoothDevice device) async {
-    // 显示连接进度对话框
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(),
-              SizedBox(height: 16),
-              Text('正在连接到 ${device.platformName}...'),
-            ],
+  Future<void> _connectToDevice(BuildContext context,
+      BluetoothManager bluetoothManager, BluetoothDevice device) async {
+    bool? dialogResult;
+
+    try {
+      // 显示连接进度对话框，并等待连接完成
+      dialogResult = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (BuildContext dialogContext) {
+          // 在对话框内部执行连接操作
+          _performConnection(dialogContext, bluetoothManager, device);
+
+          return AlertDialog(
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('正在连接到 ${device.platformName}...'),
+              ],
+            ),
+          );
+        },
+      );
+
+      // 检查主页面context是否仍然有效再显示SnackBar
+      if (context.mounted && dialogResult != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(dialogResult ? '连接成功!' : '连接失败，请重试'),
+            backgroundColor: dialogResult ? Colors.green : Colors.red,
+            duration: Duration(seconds: 2),
           ),
         );
-      },
-    );
-        // 关闭进度对话框
-   
-    try {
-         bool success = await bluetoothManager.connectToDevice(device);
-          Navigator.of(context).pop();
-          print("🔗连接成功 ${success.toString()}...");
-
-      // 显示连接结果
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(success ? '连接成功!!!' : '连接失败，请重试'),
-          backgroundColor: success ? Colors.green : Colors.red,
-          duration: Duration(seconds: 2),
-        ),
-      );
+      }
     } catch (e) {
-      print("link error ${e.toString()}");
+      print('Connection dialog error: $e');
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('连接过程中出现错误'),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
     }
+  }
 
- 
-    
-   
+  // 执行实际的连接操作
+  Future<void> _performConnection(BuildContext dialogContext,
+      BluetoothManager bluetoothManager, BluetoothDevice device) async {
+    try {
+      bool success = await bluetoothManager.connectToDevice(device);
+
+      // 安全地关闭对话框并返回结果
+      if (dialogContext.mounted) {
+        Navigator.of(dialogContext).pop(success);
+      }
+    } catch (e) {
+      print('Connection error: $e');
+      // 安全地关闭对话框并返回失败结果
+      if (dialogContext.mounted) {
+        Navigator.of(dialogContext).pop(false);
+      }
+    }
   }
 }

@@ -131,12 +131,17 @@ class BluetoothManager extends ChangeNotifier {
       _connectionState = BluetoothConnectionState.connecting;
       notifyListeners();
 
-      // 连接设备
-      await device.connect(timeout: Duration(seconds: 15));
+      // 连接设备，添加超时控制
+      await device.connect(
+        timeout: Duration(seconds: 15),
+        autoConnect: false, // 避免自动重连导致的问题
+      );
+
       _connectedDevice = device;
       _connectionState = BluetoothConnectionState.connected;
 
       // 监听连接状态变化
+      _connectionSubscription?.cancel(); // 取消之前的订阅
       _connectionSubscription = device.connectionState.listen((state) {
         _connectionState = state;
         if (state == BluetoothConnectionState.disconnected) {
@@ -148,6 +153,8 @@ class BluetoothManager extends ChangeNotifier {
       });
 
       // 连接成功后，尝试读取电池电量
+      // 添加延迟确保连接稳定
+      await Future.delayed(Duration(milliseconds: 500));
       await _setupBatteryMonitoring(device);
 
       notifyListeners();
