@@ -140,19 +140,39 @@ class HeadphoneScreen extends StatelessWidget {
   Widget _buildBatteryCard(BluetoothManager bluetoothManager) {
     Color batteryColor;
     IconData batteryIcon;
+    String batteryText;
 
-    if (bluetoothManager.batteryLevel > 60) {
+    if (bluetoothManager.batteryLevel == -1) {
+      // 不支持电池读取
+      batteryColor = Colors.grey;
+      batteryIcon = Icons.battery_unknown;
+      batteryText = "不支持";
+    } else if (bluetoothManager.batteryLevel == 0 &&
+        !bluetoothManager.batterySupported) {
+      // 检测中或获取失败
+      batteryColor = Colors.orange;
+      batteryIcon = Icons.battery_unknown;
+      batteryText = "检测中...";
+    } else if (bluetoothManager.batteryLevel > 60) {
       batteryColor = Colors.green;
       batteryIcon = Icons.battery_full;
+      batteryText = "${bluetoothManager.batteryLevel}%";
     } else if (bluetoothManager.batteryLevel > 30) {
       batteryColor = Colors.orange;
       batteryIcon = Icons.battery_3_bar;
+      batteryText = "${bluetoothManager.batteryLevel}%";
     } else if (bluetoothManager.batteryLevel > 15) {
       batteryColor = Colors.red;
       batteryIcon = Icons.battery_2_bar;
-    } else {
+      batteryText = "${bluetoothManager.batteryLevel}%";
+    } else if (bluetoothManager.batteryLevel >= 0) {
       batteryColor = Colors.red.shade700;
       batteryIcon = Icons.battery_1_bar;
+      batteryText = "${bluetoothManager.batteryLevel}%";
+    } else {
+      batteryColor = Colors.grey;
+      batteryIcon = Icons.battery_unknown;
+      batteryText = "未知";
     }
 
     return Card(
@@ -178,7 +198,7 @@ class HeadphoneScreen extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        '${bluetoothManager.batteryLevel}%',
+                        batteryText,
                         style: TextStyle(
                           color: batteryColor,
                           fontSize: 24,
@@ -200,14 +220,36 @@ class HeadphoneScreen extends StatelessWidget {
               ],
             ),
             SizedBox(height: 12),
-            // 电池电量进度条
-            LinearProgressIndicator(
-              value: bluetoothManager.batteryLevel / 100.0,
-              backgroundColor: Colors.grey.shade300,
-              valueColor: AlwaysStoppedAnimation<Color>(batteryColor),
-              minHeight: 8,
+
+            // 电池电量进度条（仅在有有效电量时显示）
+            if (bluetoothManager.batteryLevel >= 0) ...[
+              LinearProgressIndicator(
+                value: bluetoothManager.batteryLevel / 100.0,
+                backgroundColor: Colors.grey.shade300,
+                valueColor: AlwaysStoppedAnimation<Color>(batteryColor),
+                minHeight: 8,
+              ),
+              SizedBox(height: 8),
+            ],
+
+            // 显示电池信息来源
+            Row(
+              children: [
+                Icon(Icons.info_outline, size: 16, color: Colors.grey.shade600),
+                SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    '来源: ${bluetoothManager.batterySource}',
+                    style: TextStyle(
+                      color: Colors.grey.shade600,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              ],
             ),
-            SizedBox(height: 8),
+
+            SizedBox(height: 4),
             Text(
               _getBatteryStatusText(bluetoothManager.batteryLevel),
               style: TextStyle(
@@ -215,6 +257,37 @@ class HeadphoneScreen extends StatelessWidget {
                 fontSize: 12,
               ),
             ),
+
+            // 如果是AirPods，显示特殊说明
+            if (bluetoothManager.connectedDevice?.platformName
+                    .toLowerCase()
+                    .contains('airpods') ==
+                true) ...[
+              SizedBox(height: 8),
+              Container(
+                padding: EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.blue.shade200),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info, color: Colors.blue, size: 16),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'AirPods 电量信息需要通过 iOS 系统获取，第三方应用可能无法直接读取。建议通过 iOS 控制中心或设置查看准确电量。',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.blue.shade700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -222,6 +295,8 @@ class HeadphoneScreen extends StatelessWidget {
   }
 
   String _getBatteryStatusText(int batteryLevel) {
+    if (batteryLevel == -1) return '此设备不支持电池电量读取';
+    if (batteryLevel == 0) return '正在检测电池状态...';
     if (batteryLevel > 80) return '电量充足';
     if (batteryLevel > 60) return '电量良好';
     if (batteryLevel > 30) return '电量适中';
