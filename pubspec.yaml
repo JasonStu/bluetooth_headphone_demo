@@ -1,0 +1,25 @@
+name: bluetooth_headphone_demo
+description: A Flutter demo project for Bluetooth headphone connection and battery management.
+
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_blue_plus: ^1.20.5
+  permission_handler: ^11.0.1
+  provider: ^6.1.1
+  cupertino_icons: ^1.0.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
