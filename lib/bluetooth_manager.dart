@@ -93,6 +93,7 @@ class BluetoothManager extends ChangeNotifier {
       await FlutterBluePlus.startScan(
         timeout: Duration(seconds: 10),
         androidUsesFineLocation: true,
+
       );
 
       // 监听扫描结果
