@@ -11,9 +11,10 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  flutter_blue_plus: ^1.20.5
+  flutter_blue_plus: ^1.32.12
   permission_handler: ^11.0.1
   provider: ^6.1.1
+  shared_preferences: ^2.2.2
   cupertino_icons: ^1.0.2
 
 dev_dependencies:

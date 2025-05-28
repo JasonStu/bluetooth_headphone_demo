@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'bluetooth_manager.dart';
+import 'battery_calibration.dart';
 
 class HeadphoneScreen extends StatelessWidget {
   @override
@@ -26,7 +27,7 @@ class HeadphoneScreen extends StatelessWidget {
 
                 // 电池状态卡片
                 if (bluetoothManager.isConnected) ...[
-                  _buildBatteryCard(bluetoothManager),
+                  _buildBatteryCard(context, bluetoothManager),
                   SizedBox(height: 16),
                 ],
 
@@ -35,7 +36,7 @@ class HeadphoneScreen extends StatelessWidget {
                 SizedBox(height: 16),
 
                 // 发现的设备列表
-                _buildDeviceList(bluetoothManager),
+                _buildDeviceList(context, bluetoothManager),
               ],
             ),
           );
@@ -137,7 +138,7 @@ class HeadphoneScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildBatteryCard(BluetoothManager bluetoothManager) {
+  Widget _buildBatteryCard(BuildContext context, BluetoothManager bluetoothManager) {
     Color batteryColor;
     IconData batteryIcon;
     String batteryText;
@@ -147,8 +148,7 @@ class HeadphoneScreen extends StatelessWidget {
       batteryColor = Colors.grey;
       batteryIcon = Icons.battery_unknown;
       batteryText = "不支持";
-    } else if (bluetoothManager.batteryLevel == 0 &&
-        !bluetoothManager.batterySupported) {
+    } else if (bluetoothManager.batteryLevel == 0 && !bluetoothManager.batterySupported) {
       // 检测中或获取失败
       batteryColor = Colors.orange;
       batteryIcon = Icons.battery_unknown;
@@ -197,25 +197,77 @@ class HeadphoneScreen extends StatelessWidget {
                           fontWeight: FontWeight.bold,
                         ),
                       ),
-                      Text(
-                        batteryText,
-                        style: TextStyle(
-                          color: batteryColor,
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                        ),
+                      Row(
+                        children: [
+                          Text(
+                            batteryText,
+                            style: TextStyle(
+                              color: batteryColor,
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          if (bluetoothManager.batteryLevel != bluetoothManager.rawBatteryValue &&
+                              bluetoothManager.rawBatteryValue > 0) ...[
+                            SizedBox(width: 8),
+                            Container(
+                              padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.blue.shade100,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                '原始:${bluetoothManager.rawBatteryValue}%',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.blue.shade700,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
                     ],
                   ),
                 ),
-                ElevatedButton.icon(
-                  onPressed: () => bluetoothManager.refreshBatteryLevel(),
-                  icon: Icon(Icons.refresh),
-                  label: Text('刷新'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blue,
-                    foregroundColor: Colors.white,
-                  ),
+                Column(
+                  children: [
+                    ElevatedButton.icon(
+                      onPressed: () => bluetoothManager.refreshBatteryLevel(),
+                      icon: Icon(Icons.refresh, size: 16),
+                      label: Text('刷新', style: TextStyle(fontSize: 12)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blue,
+                        foregroundColor: Colors.white,
+                        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        minimumSize: Size(0, 32),
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    ElevatedButton.icon(
+                      onPressed: () => _showBatteryDetails(context, bluetoothManager),
+                      icon: Icon(Icons.info_outline, size: 16),
+                      label: Text('详情', style: TextStyle(fontSize: 12)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green,
+                        foregroundColor: Colors.white,
+                        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        minimumSize: Size(0, 32),
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    ElevatedButton.icon(
+                      onPressed: () => _showCalibrationDialog(context, bluetoothManager),
+                      icon: Icon(Icons.tune, size: 16),
+                      label: Text('校准', style: TextStyle(fontSize: 12)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.orange,
+                        foregroundColor: Colors.white,
+                        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        minimumSize: Size(0, 32),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -232,24 +284,48 @@ class HeadphoneScreen extends StatelessWidget {
               SizedBox(height: 8),
             ],
 
-            // 显示电池信息来源
-            Row(
-              children: [
-                Icon(Icons.info_outline, size: 16, color: Colors.grey.shade600),
-                SizedBox(width: 4),
-                Expanded(
-                  child: Text(
-                    '来源: ${bluetoothManager.batterySource}',
-                    style: TextStyle(
-                      color: Colors.grey.shade600,
-                      fontSize: 12,
-                    ),
+            // 显示电池信息来源和校准信息
+            Container(
+              padding: EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade50,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: Colors.grey.shade200),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.info_outline, size: 14, color: Colors.grey.shade600),
+                      SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          '数据来源: ${bluetoothManager.batterySource}',
+                          style: TextStyle(
+                            color: Colors.grey.shade600,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-              ],
+                  if (bluetoothManager.batteryLevel != bluetoothManager.rawBatteryValue &&
+                      bluetoothManager.rawBatteryValue > 0) ...[
+                    SizedBox(height: 4),
+                    Text(
+                      '已应用设备校准 (原始值: ${bluetoothManager.rawBatteryValue}%)',
+                      style: TextStyle(
+                        color: Colors.blue.shade600,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
             ),
 
-            SizedBox(height: 4),
+            SizedBox(height: 8),
             Text(
               _getBatteryStatusText(bluetoothManager.batteryLevel),
               style: TextStyle(
@@ -259,10 +335,7 @@ class HeadphoneScreen extends StatelessWidget {
             ),
 
             // 如果是AirPods，显示特殊说明
-            if (bluetoothManager.connectedDevice?.platformName
-                    .toLowerCase()
-                    .contains('airpods') ==
-                true) ...[
+            if (bluetoothManager.connectedDevice?.platformName.toLowerCase().contains('airpods') == true) ...[
               SizedBox(height: 8),
               Container(
                 padding: EdgeInsets.all(8),
@@ -277,7 +350,7 @@ class HeadphoneScreen extends StatelessWidget {
                     SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'AirPods 电量信息需要通过 iOS 系统获取，第三方应用可能无法直接读取。建议通过 iOS 控制中心或设置查看准确电量。',
+                        'AirPods 电量读取已优化，如仍有差异，可通过 iOS 控制中心查看系统电量。',
                         style: TextStyle(
                           fontSize: 11,
                           color: Colors.blue.shade700,
@@ -316,8 +389,7 @@ class HeadphoneScreen extends StatelessWidget {
               children: [
                 Icon(
                   bluetoothManager.isScanning ? Icons.radar : Icons.search,
-                  color:
-                      bluetoothManager.isScanning ? Colors.blue : Colors.grey,
+                  color: bluetoothManager.isScanning ? Colors.blue : Colors.grey,
                   size: 28,
                 ),
                 SizedBox(width: 12),
@@ -333,9 +405,7 @@ class HeadphoneScreen extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        bluetoothManager.isScanning
-                            ? '正在扫描附近的蓝牙设备...'
-                            : '点击开始扫描蓝牙设备',
+                        bluetoothManager.isScanning ? '正在扫描附近的蓝牙设备...' : '点击开始扫描蓝牙设备',
                         style: TextStyle(
                           color: Colors.grey.shade600,
                           fontSize: 14,
@@ -354,14 +424,10 @@ class HeadphoneScreen extends StatelessWidget {
                     onPressed: bluetoothManager.isScanning
                         ? () => bluetoothManager.stopScan()
                         : () => bluetoothManager.startScan(),
-                    icon: Icon(bluetoothManager.isScanning
-                        ? Icons.stop
-                        : Icons.search),
+                    icon: Icon(bluetoothManager.isScanning ? Icons.stop : Icons.search),
                     label: Text(bluetoothManager.isScanning ? '停止扫描' : '开始扫描'),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: bluetoothManager.isScanning
-                          ? Colors.red
-                          : Colors.blue,
+                      backgroundColor: bluetoothManager.isScanning ? Colors.red : Colors.blue,
                       foregroundColor: Colors.white,
                     ),
                   ),
@@ -378,7 +444,7 @@ class HeadphoneScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildDeviceList(BluetoothManager bluetoothManager) {
+  Widget _buildDeviceList(BuildContext context, BluetoothManager bluetoothManager) {
     if (bluetoothManager.discoveredDevices.isEmpty) {
       return Card(
         elevation: 4,
@@ -435,8 +501,7 @@ class HeadphoneScreen extends StatelessWidget {
             itemCount: bluetoothManager.discoveredDevices.length,
             separatorBuilder: (context, index) => Divider(height: 1),
             itemBuilder: (context, index) {
-              BluetoothDevice device =
-                  bluetoothManager.discoveredDevices[index];
+              BluetoothDevice device = bluetoothManager.discoveredDevices[index];
               bool isConnected = bluetoothManager.connectedDevice == device;
 
               return ListTile(
@@ -448,8 +513,7 @@ class HeadphoneScreen extends StatelessWidget {
                 title: Text(
                   device.platformName.isNotEmpty ? device.platformName : '未知设备',
                   style: TextStyle(
-                    fontWeight:
-                        isConnected ? FontWeight.bold : FontWeight.normal,
+                    fontWeight: isConnected ? FontWeight.bold : FontWeight.normal,
                     color: isConnected ? Colors.green : null,
                   ),
                 ),
@@ -470,17 +534,15 @@ class HeadphoneScreen extends StatelessWidget {
                 trailing: isConnected
                     ? Icon(Icons.check_circle, color: Colors.green)
                     : ElevatedButton(
-                        onPressed: bluetoothManager.connectionState ==
-                                BluetoothConnectionState.connecting
-                            ? null
-                            : () => _connectToDevice(
-                                context, bluetoothManager, device),
-                        child: Text('连接'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.blue,
-                          foregroundColor: Colors.white,
-                        ),
-                      ),
+                  onPressed: bluetoothManager.connectionState == BluetoothConnectionState.connecting
+                      ? null
+                      : () => _connectToDevice(context, bluetoothManager, device),
+                  child: Text('连接'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
                 isThreeLine: isConnected,
               );
             },
@@ -505,8 +567,97 @@ class HeadphoneScreen extends StatelessWidget {
     }
   }
 
-  Future<void> _connectToDevice(BuildContext context,
-      BluetoothManager bluetoothManager, BluetoothDevice device) async {
+  // 显示电池详细信息对话框
+  void _showBatteryDetails(BuildContext context, BluetoothManager bluetoothManager) {
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: Text('电池详细信息'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildDetailRow('显示电量', '${bluetoothManager.batteryLevel}%'),
+              _buildDetailRow('原始数值', '${bluetoothManager.rawBatteryValue}%'),
+              _buildDetailRow('校准电量', '${bluetoothManager.calibratedBatteryLevel.toStringAsFixed(1)}%'),
+              _buildDetailRow('数据来源', bluetoothManager.batterySource),
+              _buildDetailRow('设备名称', bluetoothManager.connectedDevice?.platformName ?? '未知'),
+              SizedBox(height: 12),
+              Text(
+                '说明：',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+              ),
+              SizedBox(height: 4),
+              Text(
+                '• 显示电量：经过校准和平滑处理的最终值\n'
+                    '• 原始数值：设备直接返回的电量值\n'
+                    '• 校准电量：根据设备特性调整后的精确值\n'
+                    '• 不同品牌设备的电量报告方式可能有差异',
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: Text('关闭'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+                bluetoothManager.refreshBatteryLevel();
+              },
+              child: Text('重新读取'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildDetailRow(String label, String value) {
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 80,
+            child: Text(
+              '$label:',
+              style: TextStyle(fontWeight: FontWeight.w500),
+            ),
+          ),
+          Expanded(
+            child: Text(value),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 显示校准对话框
+  void _showCalibrationDialog(BuildContext context, BluetoothManager bluetoothManager) {
+    if (bluetoothManager.connectedDevice == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('请先连接设备')),
+      );
+      return;
+    }
+
+    BatteryCalibration.showCalibrationDialog(
+      context,
+      bluetoothManager.connectedDevice!.remoteId.toString(),
+      bluetoothManager.connectedDevice!.platformName,
+      bluetoothManager.batteryLevel,
+          (newFactor) {
+        // 重新读取电量以应用新的校准
+        bluetoothManager.refreshBatteryLevel();
+      },
+    );
+  }
+
+  Future<void> _connectToDevice(BuildContext context, BluetoothManager bluetoothManager, BluetoothDevice device) async {
     bool? dialogResult;
 
     try {
@@ -556,8 +707,7 @@ class HeadphoneScreen extends StatelessWidget {
   }
 
   // 执行实际的连接操作
-  Future<void> _performConnection(BuildContext dialogContext,
-      BluetoothManager bluetoothManager, BluetoothDevice device) async {
+  Future<void> _performConnection(BuildContext dialogContext, BluetoothManager bluetoothManager, BluetoothDevice device) async {
     try {
       bool success = await bluetoothManager.connectToDevice(device);
 
