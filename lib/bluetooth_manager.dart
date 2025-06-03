@@ -20,12 +20,12 @@ class BluetoothManager extends ChangeNotifier {
   List<BluetoothDevice> _discoveredDevices = [];
   BluetoothConnectionState _connectionState = BluetoothConnectionState.disconnected;
   int _batteryLevel = 0;
-  int _rawBatteryValue = 0; // 新增：原始电池值
-  double _calibratedBatteryLevel = 0.0; // 新增：校准后的电池值
+  int _rawBatteryValue = 0; // 原始电池值
+  double _calibratedBatteryLevel = 0.0; // 校准后的电池值
   bool _isScanning = false;
   bool _batterySupported = false;
   String _batterySource = "未知";
-  List<int> _batteryHistory = []; // 新增：电池历史记录用于平滑
+  List<int> _batteryHistory = []; // 电池历史记录用于平滑
   StreamSubscription? _scanSubscription;
   StreamSubscription? _connectionSubscription;
   StreamSubscription? _batterySubscription;
@@ -88,30 +88,59 @@ class BluetoothManager extends ChangeNotifier {
       _isScanning = true;
       notifyListeners();
 
-      // 开始扫描
+      print("开始蓝牙扫描...");
+
+      // 停止之前的扫描（如果有）
+      await FlutterBluePlus.stopScan();
+
+      // 等待一下确保停止完成
+      await Future.delayed(Duration(milliseconds: 500));
+
+      // 开始扫描 - 使用更宽松的参数
       await FlutterBluePlus.startScan(
-        timeout: Duration(seconds: 10),
+        timeout: Duration(seconds: 15), // 增加扫描时间
         androidUsesFineLocation: true,
       );
 
       // 监听扫描结果
+      _scanSubscription?.cancel();
       _scanSubscription = FlutterBluePlus.scanResults.listen((results) {
+        print("扫描到 ${results.length} 个结果");
+
         for (ScanResult result in results) {
-          if (!_discoveredDevices.contains(result.device) &&
-              result.device.platformName.isNotEmpty) {
-            _discoveredDevices.add(result.device);
+          BluetoothDevice device = result.device;
+
+          // 检查设备是否已存在
+          if (_discoveredDevices.any((d) => d.remoteId == device.remoteId)) {
+            continue;
+          }
+
+          // 更宽松的设备过滤条件
+          bool shouldAdd = false;
+
+          // 1. 有设备名称的设备
+          if (device.platformName.isNotEmpty|| device.advName.isNotEmpty) {
+            shouldAdd = true;
+            print("发现命名设备: ${device.platformName} (${device.remoteId})");
+          }
+
+          if (shouldAdd) {
+            _discoveredDevices.add(device);
+            print("添加设备: ${device.platformName.isNotEmpty ? device.platformName : '未知设备'} (总计: ${_discoveredDevices.length})");
             notifyListeners();
           }
         }
+      }, onError: (error) {
+        print("扫描错误: $error");
       });
 
-      // 10秒后停止扫描
-      Timer(Duration(seconds: 10), () {
+      // 15秒后停止扫描
+      Timer(Duration(seconds: 15), () {
         stopScan();
       });
 
     } catch (e) {
-      print("Error starting scan: $e");
+      print("启动扫描时出错: $e");
       _isScanning = false;
       notifyListeners();
     }
@@ -587,6 +616,44 @@ class BluetoothManager extends ChangeNotifier {
     _calibratedBatteryLevel = _batteryLevel.toDouble();
   }
 
+  // 解析HID电池数据
+  int? _parseHIDBatteryData(List<int> data) {
+    try {
+      if (data.length >= 2) {
+        // HID报告通常在特定位置包含电池信息
+        for (int i = 0; i < data.length; i++) {
+          if (data[i] >= 0 && data[i] <= 100) {
+            return data[i];
+          }
+        }
+      }
+    } catch (e) {
+      print("解析HID电池数据失败: $e");
+    }
+    return null;
+  }
+
+  // 解析Apple电池数据
+  int? _parseAppleBatteryData(List<int> data) {
+    try {
+      if (data.length >= 1) {
+        // Apple设备可能使用不同的数据格式
+        int batteryLevel = data[0];
+        if (batteryLevel >= 0 && batteryLevel <= 100) {
+          return batteryLevel;
+        }
+
+        // 有些Apple设备可能使用0-255范围，需要转换
+        if (batteryLevel > 100 && batteryLevel <= 255) {
+          return (batteryLevel * 100 / 255).round();
+        }
+      }
+    } catch (e) {
+      print("解析Apple电池数据失败: $e");
+    }
+    return null;
+  }
+
   // 刷新电池电量（增强版）
   Future<void> refreshBatteryLevel() async {
     if (_connectedDevice == null) return;
@@ -658,44 +725,6 @@ class BluetoothManager extends ChangeNotifier {
     return validReadings[validReadings.length ~/ 2];
   }
 
-  // 解析HID电池数据
-  int? _parseHIDBatteryData(List<int> data) {
-    try {
-      if (data.length >= 2) {
-        // HID报告通常在特定位置包含电池信息
-        for (int i = 0; i < data.length; i++) {
-          if (data[i] >= 0 && data[i] <= 100) {
-            return data[i];
-          }
-        }
-      }
-    } catch (e) {
-      print("解析HID电池数据失败: $e");
-    }
-    return null;
-  }
-
-  // 解析Apple电池数据
-  int? _parseAppleBatteryData(List<int> data) {
-    try {
-      if (data.length >= 1) {
-        // Apple设备可能使用不同的数据格式
-        int batteryLevel = data[0];
-        if (batteryLevel >= 0 && batteryLevel <= 100) {
-          return batteryLevel;
-        }
-
-        // 有些Apple设备可能使用0-255范围，需要转换
-        if (batteryLevel > 100 && batteryLevel <= 255) {
-          return (batteryLevel * 100 / 255).round();
-        }
-      }
-    } catch (e) {
-      print("解析Apple电池数据失败: $e");
-    }
-    return null;
-  }
-
   Future<void> disconnect() async {
     if (_connectedDevice == null) return;
 
@@ -712,34 +741,15 @@ class BluetoothManager extends ChangeNotifier {
     }
   }
 
-  // Future<void> refreshBatteryLevel() async {
-  //   if (_connectedDevice == null) return;
-  //
-  //   try {
-  //     List<BluetoothService> services = await _connectedDevice!.discoverServices();
-  //
-  //     for (BluetoothService service in services) {
-  //       if (service.uuid.toString().toLowerCase() == BATTERY_SERVICE_UUID.toLowerCase()) {
-  //         for (BluetoothCharacteristic characteristic in service.characteristics) {
-  //           if (characteristic.uuid.toString().toLowerCase() == BATTERY_LEVEL_CHARACTERISTIC_UUID.toLowerCase()) {
-  //             if (characteristic.properties.read) {
-  //               List<int> value = await characteristic.read();
-  //               if (value.isNotEmpty) {
-  //                 _batteryLevel = value[0];
-  //                 notifyListeners();
-  //               }
-  //             }
-  //             break;
-  //           }
-  //         }
-  //         break;
-  //       }
-  //     }
-  //   } catch (e) {
-  //     print("Error refreshing battery level: $e");
-  //   }
-  // }
-
+  // 添加一个简单的设备显示名称方法
+  String getDeviceDisplayName(BluetoothDevice device) {
+    if (device.platformName.isNotEmpty) {
+      return device.platformName;
+    }
+    // 如果没有名称，返回一个友好的显示名
+    String deviceId = device.remoteId.toString();
+    return '未知设备 (${deviceId.substring(deviceId.length - 8)})';
+  }
   @override
   void dispose() {
     _scanSubscription?.cancel();
@@ -748,4 +758,4 @@ class BluetoothManager extends ChangeNotifier {
     disconnect();
     super.dispose();
   }
-}
+  }

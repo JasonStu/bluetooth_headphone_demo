@@ -405,7 +405,9 @@ class HeadphoneScreen extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        bluetoothManager.isScanning ? '正在扫描附近的蓝牙设备...' : '点击开始扫描蓝牙设备',
+                        bluetoothManager.isScanning
+                            ? '正在扫描附近的蓝牙设备...'
+                            : '点击开始扫描蓝牙设备',
                         style: TextStyle(
                           color: Colors.grey.shade600,
                           fontSize: 14,
@@ -438,11 +440,90 @@ class HeadphoneScreen extends StatelessWidget {
               SizedBox(height: 12),
               LinearProgressIndicator(),
             ],
+            SizedBox(height: 8),
+            Container(
+              padding: EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: Colors.blue.shade200),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline, size: 14, color: Colors.blue.shade600),
+                  SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      '增强搜索：15秒深度扫描，可发现更多设备（包括未命名设备）',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.blue.shade700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ],
         ),
       ),
     );
   }
+
+  Widget _buildDeviceInfoRow(String label, String value) {
+  return Padding(
+    padding: EdgeInsets.symmetric(vertical: 4),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 120,
+          child: Text(
+            '$label:',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            style: TextStyle(fontSize: 13),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+ 
+
+  void _showDeviceInfoDialog(BuildContext context, BluetoothDevice device) {
+  showDialog(
+    context: context,
+    builder: (context) {
+      return AlertDialog(
+        title: Text('${device.platformName} 详细信息'),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildDeviceInfoRow('设备名称', device.platformName.isNotEmpty
+                  ? device.platformName
+                  : '未知设备'),
+              _buildDeviceInfoRow('设备ID', device.remoteId.toString()),
+              _buildDeviceInfoRow('是否已连接', device.isConnected ? '是' : '否'),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: Navigator.of(context).pop,
+            child: Text('关闭'),
+          ),
+        ],
+      );
+    },
+  );
+}
 
   Widget _buildDeviceList(BuildContext context, BluetoothManager bluetoothManager) {
     if (bluetoothManager.discoveredDevices.isEmpty) {
@@ -453,13 +534,13 @@ class HeadphoneScreen extends StatelessWidget {
           child: Column(
             children: [
               Icon(
-                Icons.bluetooth_searching,
+                bluetoothManager.isScanning ? Icons.bluetooth_searching : Icons.bluetooth_disabled,
                 size: 64,
                 color: Colors.grey.shade400,
               ),
               SizedBox(height: 16),
               Text(
-                '未发现设备',
+                bluetoothManager.isScanning ? '正在搜索设备...' : '未发现设备',
                 style: TextStyle(
                   fontSize: 16,
                   color: Colors.grey.shade600,
@@ -467,13 +548,27 @@ class HeadphoneScreen extends StatelessWidget {
               ),
               SizedBox(height: 8),
               Text(
-                '请确保蓝牙设备处于配对模式并点击扫描',
+                bluetoothManager.isScanning
+                    ? '请稍候，正在搜索附近的蓝牙设备'
+                    : '请确保蓝牙设备处于配对模式并点击扫描',
                 style: TextStyle(
                   fontSize: 12,
                   color: Colors.grey.shade500,
                 ),
                 textAlign: TextAlign.center,
               ),
+              if (!bluetoothManager.isScanning) ...[
+                SizedBox(height: 16),
+                ElevatedButton.icon(
+                  onPressed: () => bluetoothManager.startScan(),
+                  icon: Icon(Icons.refresh),
+                  label: Text('重新扫描'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -487,12 +582,31 @@ class HeadphoneScreen extends StatelessWidget {
         children: [
           Padding(
             padding: EdgeInsets.all(16),
-            child: Text(
-              '发现的设备 (${bluetoothManager.discoveredDevices.length})',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '发现的设备 (${bluetoothManager.discoveredDevices.length})',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                if (!bluetoothManager.isScanning) ...[
+                  IconButton(
+                    onPressed: () => bluetoothManager.startScan(),
+                    icon: Icon(Icons.refresh),
+                    tooltip: '重新扫描',
+                  ),
+                ] else ...[
+                  SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ],
+              ],
             ),
           ),
           ListView.separated(
@@ -503,15 +617,16 @@ class HeadphoneScreen extends StatelessWidget {
             itemBuilder: (context, index) {
               BluetoothDevice device = bluetoothManager.discoveredDevices[index];
               bool isConnected = bluetoothManager.connectedDevice == device;
+              String displayName = bluetoothManager.getDeviceDisplayName(device);
 
               return ListTile(
                 leading: Icon(
-                  _getDeviceIcon(device.platformName),
+                  _getDeviceIcon(displayName),
                   color: isConnected ? Colors.green : Colors.blue,
                   size: 32,
                 ),
                 title: Text(
-                  device.platformName.isNotEmpty ? device.platformName : '未知设备',
+                  displayName,
                   style: TextStyle(
                     fontWeight: isConnected ? FontWeight.bold : FontWeight.normal,
                     color: isConnected ? Colors.green : null,
@@ -520,15 +635,28 @@ class HeadphoneScreen extends StatelessWidget {
                 subtitle: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('ID: ${device.remoteId}'),
-                    if (isConnected)
+                    Text(
+                      'ID: ${device.remoteId.toString().substring(0, 8)}...',
+                      style: TextStyle(fontSize: 11),
+                    ),
+                    if (isConnected) ...[
                       Text(
                         '已连接',
                         style: TextStyle(
                           color: Colors.green,
                           fontWeight: FontWeight.w500,
+                          fontSize: 12,
                         ),
                       ),
+                    ] else ...[
+                      Text(
+                        _getDeviceTypeDescription(displayName),
+                        style: TextStyle(
+                          color: Colors.blue.shade600,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
                 trailing: isConnected
@@ -537,15 +665,43 @@ class HeadphoneScreen extends StatelessWidget {
                   onPressed: bluetoothManager.connectionState == BluetoothConnectionState.connecting
                       ? null
                       : () => _connectToDevice(context, bluetoothManager, device),
-                  child: Text('连接'),
+                  child: Text('连接', style: TextStyle(fontSize: 12)),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.blue,
                     foregroundColor: Colors.white,
+                    padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    minimumSize: Size(0, 32),
                   ),
                 ),
-                isThreeLine: isConnected,
+                onTap: () => _showDeviceInfoDialog(context, device)
               );
             },
+          ),
+          Padding(
+            padding: EdgeInsets.all(16),
+            child: Container(
+              padding: EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: Colors.blue.shade200),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline, size: 16, color: Colors.blue.shade600),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '提示：某些设备可能显示为"未知设备"，这是正常现象。请根据设备类型图标判断。',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.blue.shade700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ],
       ),
@@ -564,6 +720,22 @@ class HeadphoneScreen extends StatelessWidget {
       return Icons.keyboard;
     } else {
       return Icons.bluetooth;
+    }
+  }
+
+  // 获取设备类型描述
+  String _getDeviceTypeDescription(String deviceName) {
+    String name = deviceName.toLowerCase();
+    if (name.contains('airpods') || name.contains('beats')) {
+      return 'Apple 音频设备';
+    } else if (name.contains('headphone') || name.contains('耳机')) {
+      return '耳机设备';
+    } else if (name.contains('speaker') || name.contains('音响')) {
+      return '音响设备';
+    } else if (name.contains('未知')) {
+      return '蓝牙设备';
+    } else {
+      return '蓝牙设备';
     }
   }
 
