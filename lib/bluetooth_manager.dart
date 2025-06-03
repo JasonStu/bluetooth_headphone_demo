@@ -59,6 +59,11 @@ class BluetoothManager extends ChangeNotifier {
   bool _volumeControlSupported = false;
   String _audioProfiles = "未检测";
 
+  // 连接质量和配对状态
+  bool _isSystemPaired = false;
+  String _connectionType = "BLE";
+  String _pairingIssue = "";
+
   StreamSubscription? _scanSubscription;
   StreamSubscription? _connectionSubscription;
   StreamSubscription? _batterySubscription;
@@ -83,6 +88,11 @@ class BluetoothManager extends ChangeNotifier {
   int get currentVolume => _currentVolume;
   bool get volumeControlSupported => _volumeControlSupported;
   String get audioProfiles => _audioProfiles;
+
+  // Connection Quality Getters
+  bool get isSystemPaired => _isSystemPaired;
+  String get connectionType => _connectionType;
+  String get pairingIssue => _pairingIssue;
 
   BluetoothManager() {
     _initBluetooth();
@@ -200,6 +210,16 @@ class BluetoothManager extends ChangeNotifier {
       _connectionState = BluetoothConnectionState.connecting;
       notifyListeners();
 
+      print("🔗 尝试连接设备: ${device.platformName}");
+
+      // 检查设备是否已在系统层面配对
+      bool isSystemPaired = await _checkSystemPairing(device);
+      print("📱 系统配对状态: ${isSystemPaired ? '已配对' : '未配对'}");
+
+      if (!isSystemPaired) {
+        print("⚠️ 设备未在系统层面配对，可能影响AVRCP功能");
+      }
+
       await device.connect(
         timeout: Duration(seconds: 15),
         autoConnect: false,
@@ -207,6 +227,8 @@ class BluetoothManager extends ChangeNotifier {
 
       _connectedDevice = device;
       _connectionState = BluetoothConnectionState.connected;
+
+      print("✅ 应用层连接成功");
 
       _connectionSubscription?.cancel();
       _connectionSubscription = device.connectionState.listen((state) {
@@ -222,13 +244,17 @@ class BluetoothManager extends ChangeNotifier {
       });
 
       await Future.delayed(Duration(milliseconds: 500));
+
+      // 检查连接质量和类型
+      await _analyzeConnectionType(device);
+
       await _setupBatteryMonitoring(device);
       await _setupAVRCPMonitoring(device);
 
       notifyListeners();
       return true;
     } catch (e) {
-      print("Error connecting to device: $e");
+      print("❌ 连接设备失败: $e");
       _connectionState = BluetoothConnectionState.disconnected;
       _connectedDevice = null;
       notifyListeners();
@@ -243,6 +269,126 @@ class BluetoothManager extends ChangeNotifier {
     _currentVolume = 50;
     _volumeControlSupported = false;
     _audioProfiles = "未检测";
+    _isSystemPaired = false;
+    _connectionType = "BLE";
+    _pairingIssue = "";
+  }
+
+  // 检查系统层面的配对状态
+  Future<bool> _checkSystemPairing(BluetoothDevice device) async {
+    try {
+      print("🔍 检查系统配对状态...");
+
+      // 获取系统已配对的设备列表
+      List<BluetoothDevice> bondedDevices = await FlutterBluePlus.bondedDevices;
+
+      bool isFound = bondedDevices
+          .any((bondedDevice) => bondedDevice.remoteId == device.remoteId);
+
+      _isSystemPaired = isFound;
+
+      if (!isFound) {
+        _pairingIssue = "设备未在系统层面配对，这可能导致AVRCP功能受限";
+        print("⚠️ ${_pairingIssue}");
+      } else {
+        _pairingIssue = "";
+        print("✅ 设备已在系统层面配对");
+      }
+
+      return isFound;
+    } catch (e) {
+      print("检查配对状态失败: $e");
+      _isSystemPaired = false;
+      _pairingIssue = "无法检查配对状态: $e";
+      return false;
+    }
+  }
+
+  // 分析连接类型和质量
+  Future<void> _analyzeConnectionType(BluetoothDevice device) async {
+    try {
+      print("📊 分析连接类型...");
+
+      // 检查设备是否支持Classic Bluetooth特征
+      bool hasClassicBluetooth = false;
+      bool hasBLEOnly = true;
+
+      List<BluetoothService> services = await device.discoverServices();
+
+      for (BluetoothService service in services) {
+        String serviceUuid = service.uuid.toString().toLowerCase();
+
+        // 检查Classic Bluetooth音频服务
+        if (serviceUuid == AVRCP_SERVICE_UUID.toLowerCase() ||
+            serviceUuid == AUDIO_SINK_UUID.toLowerCase() ||
+            serviceUuid == A2DP_SOURCE_UUID.toLowerCase()) {
+          hasClassicBluetooth = true;
+          hasBLEOnly = false;
+          print("✅ 检测到Classic Bluetooth音频服务: $serviceUuid");
+        }
+
+        // 检查是否有非标准服务（可能是混合模式）
+        if (serviceUuid.length == 36 && !serviceUuid.startsWith("0000")) {
+          print("🔍 检测到自定义服务: $serviceUuid");
+        }
+      }
+
+      // 确定连接类型
+      if (hasClassicBluetooth && _isSystemPaired) {
+        _connectionType = "Classic Bluetooth + BLE (理想状态)";
+      } else if (hasClassicBluetooth && !_isSystemPaired) {
+        _connectionType = "Classic Bluetooth (未系统配对)";
+        _pairingIssue =
+            "检测到Classic Bluetooth支持，但设备未系统配对。请在系统设置中配对此设备以获得完整的AVRCP功能。";
+      } else if (hasBLEOnly) {
+        _connectionType = "仅BLE连接";
+        _pairingIssue =
+            "此设备仅通过BLE连接，AVRCP功能可能受限。对于完整的音频控制，需要Classic Bluetooth配对。";
+      } else {
+        _connectionType = "混合连接";
+      }
+
+      print("📱 连接类型: $_connectionType");
+      if (_pairingIssue.isNotEmpty) {
+        print("⚠️ 配对问题: $_pairingIssue");
+      }
+    } catch (e) {
+      print("分析连接类型失败: $e");
+      _connectionType = "未知";
+      _pairingIssue = "无法分析连接类型: $e";
+    }
+  }
+
+  // 引导用户进行系统配对
+  Future<Map<String, dynamic>> getPairingGuidance() async {
+    Map<String, dynamic> guidance = {
+      'needsPairing': !_isSystemPaired,
+      'connectionType': _connectionType,
+      'issue': _pairingIssue,
+      'solutions': <String>[],
+      'avrcpImpact': '',
+    };
+
+    if (!_isSystemPaired) {
+      guidance['solutions'] = [
+        "1. 在手机的系统设置中找到蓝牙设置",
+        "2. 搜索并配对 ${_connectedDevice?.platformName ?? '您的设备'}",
+        "3. 确认配对后重新连接应用",
+        "4. 系统配对后AVRCP功能将完全可用",
+      ];
+
+      guidance['avrcpImpact'] = "系统未配对可能导致AVRCP音量控制功能受限或无法工作";
+    } else {
+      guidance['solutions'] = [
+        "✅ 设备已正确配对",
+        "✅ AVRCP功能应该完全可用",
+        "如果音量控制仍有问题，请尝试重新连接",
+      ];
+
+      guidance['avrcpImpact'] = "设备已正确配对，AVRCP功能应该正常工作";
+    }
+
+    return guidance;
   }
 
   // 设置AVRCP监控

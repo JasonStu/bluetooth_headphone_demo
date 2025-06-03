@@ -25,6 +25,12 @@ class HeadphoneScreen extends StatelessWidget {
                 _buildConnectionCard(bluetoothManager),
                 SizedBox(height: 16),
 
+                // 配对状态检查卡片
+                if (bluetoothManager.isConnected) ...[
+                  _buildPairingStatusCard(context, bluetoothManager),
+                  SizedBox(height: 16),
+                ],
+
                 // AVRCP状态卡片
                 if (bluetoothManager.isConnected) ...[
                   _buildAVRCPCard(context, bluetoothManager),
@@ -640,7 +646,378 @@ class HeadphoneScreen extends StatelessWidget {
     );
   }
 
-  // 原有的方法保持不变...
+  // 新增：配对状态卡片
+  Widget _buildPairingStatusCard(
+      BuildContext context, BluetoothManager bluetoothManager) {
+    bool isSystemPaired = bluetoothManager.isSystemPaired;
+    Color statusColor = isSystemPaired ? Colors.green : Colors.orange;
+    IconData statusIcon = isSystemPaired ? Icons.check_circle : Icons.warning;
+
+    return Card(
+      elevation: 4,
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(statusIcon, color: statusColor, size: 28),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '系统配对状态',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Text(
+                        isSystemPaired ? '已在系统层面配对' : '仅应用层连接',
+                        style: TextStyle(
+                          color: statusColor,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                ElevatedButton.icon(
+                  onPressed: () =>
+                      _showPairingGuidance(context, bluetoothManager),
+                  icon: Icon(Icons.help_outline, size: 16),
+                  label: Text('帮助', style: TextStyle(fontSize: 12)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue,
+                    foregroundColor: Colors.white,
+                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    minimumSize: Size(0, 32),
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: 12),
+
+            // 连接类型信息
+            Container(
+              padding: EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: isSystemPaired
+                    ? Colors.green.shade50
+                    : Colors.orange.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: isSystemPaired
+                      ? Colors.green.shade200
+                      : Colors.orange.shade200,
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildStatusRow('连接类型', bluetoothManager.connectionType),
+                  if (bluetoothManager.pairingIssue.isNotEmpty) ...[
+                    SizedBox(height: 8),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.info_outline,
+                            size: 16, color: Colors.orange.shade600),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            bluetoothManager.pairingIssue,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.orange.shade700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
+
+            // AVRCP影响说明
+            if (!isSystemPaired) ...[
+              SizedBox(height: 12),
+              Container(
+                padding: EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: Colors.red.shade200),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.volume_off, color: Colors.red, size: 16),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '⚠️ 系统未配对可能导致AVRCP音量控制功能受限',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.red.shade700,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatusRow(String label, String value) {
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 80,
+            child: Text(
+              '$label:',
+              style: TextStyle(
+                fontWeight: FontWeight.w500,
+                fontSize: 13,
+                color: Colors.grey.shade700,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 显示配对指导
+  void _showPairingGuidance(
+      BuildContext context, BluetoothManager bluetoothManager) async {
+    Map<String, dynamic> guidance = await bluetoothManager.getPairingGuidance();
+
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: Row(
+            children: [
+              Icon(
+                guidance['needsPairing']
+                    ? Icons.settings_bluetooth
+                    : Icons.check_circle,
+                color: guidance['needsPairing'] ? Colors.orange : Colors.green,
+              ),
+              SizedBox(width: 8),
+              Text('配对状态指导'),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '当前状态:',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                ),
+                SizedBox(height: 4),
+                Text(
+                  guidance['connectionType'],
+                  style: TextStyle(fontSize: 13),
+                ),
+                SizedBox(height: 12),
+                Text(
+                  'AVRCP影响:',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                ),
+                SizedBox(height: 4),
+                Text(
+                  guidance['avrcpImpact'],
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: guidance['needsPairing']
+                        ? Colors.red.shade600
+                        : Colors.green.shade600,
+                  ),
+                ),
+                SizedBox(height: 12),
+                Text(
+                  guidance['needsPairing'] ? '解决方案:' : '状态说明:',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                ),
+                SizedBox(height: 8),
+                ...guidance['solutions']
+                    .map<Widget>((solution) => Padding(
+                          padding: EdgeInsets.symmetric(vertical: 2),
+                          child: Text(
+                            solution,
+                            style: TextStyle(fontSize: 12),
+                          ),
+                        ))
+                    .toList(),
+                if (guidance['needsPairing']) ...[
+                  SizedBox(height: 16),
+                  Container(
+                    padding: EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: Colors.blue.shade200),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '💡 为什么需要系统配对?',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                            color: Colors.blue.shade700,
+                          ),
+                        ),
+                        SizedBox(height: 4),
+                        Text(
+                          '• AVRCP协议需要Classic Bluetooth配对\n'
+                          '• 仅BLE连接无法提供完整的音频控制功能\n'
+                          '• 系统配对后可实现真正的绝对音量控制',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.blue.shade600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: Text('关闭'),
+            ),
+            if (guidance['needsPairing']) ...[
+              TextButton(
+                onPressed: () {
+                  Navigator.of(dialogContext).pop();
+                  _openSystemBluetoothSettings(context);
+                },
+                child: Text('打开蓝牙设置'),
+              ),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
+  // 打开系统蓝牙设置（引导用户配对）
+  void _openSystemBluetoothSettings(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: Text('蓝牙配对指导'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '请按照以下步骤进行系统配对:',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              SizedBox(height: 12),
+              _buildStepItem('1', '打开手机的"设置"应用'),
+              _buildStepItem('2', '找到并点击"蓝牙"或"蓝牙与设备"'),
+              _buildStepItem('3', '确保您的耳机处于配对模式'),
+              _buildStepItem('4', '在可用设备列表中找到您的耳机'),
+              _buildStepItem('5', '点击耳机名称并确认配对'),
+              _buildStepItem('6', '配对成功后返回本应用重新连接'),
+              SizedBox(height: 12),
+              Container(
+                padding: EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.green.shade50,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: Colors.green.shade200),
+                ),
+                child: Text(
+                  '✅ 完成系统配对后，AVRCP音量控制功能将完全可用！',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.green.shade700,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: Text('我知道了'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildStepItem(String step, String description) {
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 20,
+            height: 20,
+            decoration: BoxDecoration(
+              color: Colors.blue,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Center(
+              child: Text(
+                step,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+          SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              description,
+              style: TextStyle(fontSize: 13),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildConnectionCard(BluetoothManager bluetoothManager) {
     Color statusColor;
     String statusText;
