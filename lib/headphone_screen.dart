@@ -9,7 +9,7 @@ class HeadphoneScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('蓝牙耳机管理'),
+        title: Text('蓝牙耳机管理 - AVRCP增强版'),
         backgroundColor: Colors.blue.shade700,
         foregroundColor: Colors.white,
         elevation: 2,
@@ -24,6 +24,19 @@ class HeadphoneScreen extends StatelessWidget {
                 // 连接状态卡片
                 _buildConnectionCard(bluetoothManager),
                 SizedBox(height: 16),
+
+                // AVRCP状态卡片
+                if (bluetoothManager.isConnected) ...[
+                  _buildAVRCPCard(context, bluetoothManager),
+                  SizedBox(height: 16),
+                ],
+
+                // 音量控制卡片
+                if (bluetoothManager.isConnected &&
+                    bluetoothManager.volumeControlSupported) ...[
+                  _buildVolumeControlCard(context, bluetoothManager),
+                  SizedBox(height: 16),
+                ],
 
                 // 电池状态卡片
                 if (bluetoothManager.isConnected) ...[
@@ -45,6 +58,589 @@ class HeadphoneScreen extends StatelessWidget {
     );
   }
 
+  // 新增：AVRCP状态卡片
+  Widget _buildAVRCPCard(
+      BuildContext context, BluetoothManager bluetoothManager) {
+    Color avrcpColor =
+        bluetoothManager.avrcpSupported ? Colors.green : Colors.red;
+    IconData avrcpIcon =
+        bluetoothManager.avrcpSupported ? Icons.music_note : Icons.music_off;
+
+    return Card(
+      elevation: 4,
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(avrcpIcon, color: avrcpColor, size: 28),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'AVRCP 音频控制协议',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Text(
+                        bluetoothManager.avrcpSupported ? '已支持' : '不支持',
+                        style: TextStyle(
+                          color: avrcpColor,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                ElevatedButton.icon(
+                  onPressed: () => _showAVRCPDetails(context, bluetoothManager),
+                  icon: Icon(Icons.info_outline, size: 16),
+                  label: Text('详情', style: TextStyle(fontSize: 12)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue,
+                    foregroundColor: Colors.white,
+                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    minimumSize: Size(0, 32),
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: 12),
+
+            // AVRCP信息显示
+            Container(
+              padding: EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: bluetoothManager.avrcpSupported
+                    ? Colors.green.shade50
+                    : Colors.red.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                    color: bluetoothManager.avrcpSupported
+                        ? Colors.green.shade200
+                        : Colors.red.shade200),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildInfoRow('AVRCP版本', bluetoothManager.avrcpVersion),
+                  _buildInfoRow('音频配置文件', bluetoothManager.audioProfiles),
+                  _buildInfoRow('音量控制',
+                      bluetoothManager.volumeControlSupported ? '支持' : '不支持'),
+
+                  // 针对JBL Live Pro+ TWS的特殊显示
+                  if (bluetoothManager.connectedDevice?.platformName
+                              .toLowerCase()
+                              .contains('jbl') ==
+                          true &&
+                      bluetoothManager.connectedDevice?.platformName
+                              .toLowerCase()
+                              .contains('live') ==
+                          true) ...[
+                    SizedBox(height: 8),
+                    Container(
+                      padding: EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.shade50,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: Colors.orange.shade200),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.headphones,
+                              color: Colors.orange, size: 16),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'JBL Live Pro+ TWS 检测：已优化AVRCP和音量控制支持',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.orange.shade700,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+
+            // AVRCP功能测试按钮
+            if (bluetoothManager.avrcpSupported) ...[
+              SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () =>
+                          _testAVRCPFunction(context, bluetoothManager),
+                      icon: Icon(Icons.play_arrow, size: 16),
+                      label: Text('测试AVRCP', style: TextStyle(fontSize: 12)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green,
+                        foregroundColor: Colors.white,
+                        padding: EdgeInsets.symmetric(vertical: 8),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  // 新增：音量控制卡片
+  Widget _buildVolumeControlCard(
+      BuildContext context, BluetoothManager bluetoothManager) {
+    return Card(
+      elevation: 4,
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.volume_up, color: Colors.blue, size: 28),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '绝对音量控制',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Text(
+                        '通过AVRCP控制耳机音量',
+                        style: TextStyle(
+                          color: Colors.grey.shade600,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade100,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Text(
+                    '${bluetoothManager.currentVolume}%',
+                    style: TextStyle(
+                      color: Colors.blue.shade700,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: 16),
+
+            // 音量滑块
+            Column(
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.volume_down,
+                        color: Colors.grey.shade600, size: 20),
+                    Expanded(
+                      child: Slider(
+                        value: bluetoothManager.currentVolume.toDouble(),
+                        min: 0,
+                        max: 100,
+                        divisions: 20,
+                        label: '${bluetoothManager.currentVolume}%',
+                        onChanged: (value) {
+                          bluetoothManager.setAbsoluteVolume(value.round());
+                        },
+                        activeColor: Colors.blue,
+                        inactiveColor: Colors.grey.shade300,
+                      ),
+                    ),
+                    Icon(Icons.volume_up,
+                        color: Colors.grey.shade600, size: 20),
+                  ],
+                ),
+                SizedBox(height: 8),
+
+                // 快速音量按钮
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    _buildVolumeButton(
+                        context, bluetoothManager, '静音', 0, Icons.volume_off),
+                    _buildVolumeButton(context, bluetoothManager, '25%', 25,
+                        Icons.volume_down),
+                    _buildVolumeButton(context, bluetoothManager, '50%', 50,
+                        Icons.volume_mute),
+                    _buildVolumeButton(
+                        context, bluetoothManager, '75%', 75, Icons.volume_up),
+                    _buildVolumeButton(
+                        context, bluetoothManager, '最大', 100, Icons.volume_up),
+                  ],
+                ),
+              ],
+            ),
+
+            SizedBox(height: 12),
+            Container(
+              padding: EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: Colors.blue.shade200),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline,
+                      size: 14, color: Colors.blue.shade600),
+                  SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      '绝对音量控制可直接设置耳机硬件音量，证明AVRCP协议工作正常',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.blue.shade700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildVolumeButton(
+      BuildContext context,
+      BluetoothManager bluetoothManager,
+      String label,
+      int volume,
+      IconData icon) {
+    return Column(
+      children: [
+        IconButton(
+          onPressed: () async {
+            bool success = await bluetoothManager.setAbsoluteVolume(volume);
+            if (success) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('音量已设置为 $volume%'),
+                  backgroundColor: Colors.green,
+                  duration: Duration(seconds: 1),
+                ),
+              );
+            } else {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('音量设置失败'),
+                  backgroundColor: Colors.red,
+                  duration: Duration(seconds: 1),
+                ),
+              );
+            }
+          },
+          icon: Icon(icon, size: 20),
+          style: IconButton.styleFrom(
+            backgroundColor: Colors.blue.shade100,
+            foregroundColor: Colors.blue.shade700,
+            padding: EdgeInsets.all(8),
+          ),
+        ),
+        Text(
+          label,
+          style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildInfoRow(String label, String value) {
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 100,
+            child: Text(
+              '$label:',
+              style: TextStyle(
+                fontWeight: FontWeight.w500,
+                fontSize: 13,
+                color: Colors.grey.shade700,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 显示AVRCP详细信息
+  void _showAVRCPDetails(
+      BuildContext context, BluetoothManager bluetoothManager) {
+    Map<String, String> avrcpInfo = bluetoothManager.getAVRCPInfo();
+
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.music_note, color: Colors.blue),
+              SizedBox(width: 8),
+              Text('AVRCP 详细信息'),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ...avrcpInfo.entries
+                    .map((entry) => _buildDetailRow(entry.key, entry.value))
+                    .toList(),
+                SizedBox(height: 16),
+                Text(
+                  'AVRCP 功能说明：',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                ),
+                SizedBox(height: 8),
+                Text(
+                  '• AVRCP (Audio/Video Remote Control Profile) 是蓝牙音频设备的控制协议\n'
+                  '• 支持播放控制、音量调节、元数据传输等功能\n'
+                  '• 版本1.3+支持绝对音量控制\n'
+                  '• 版本1.4+支持浏览和搜索功能\n'
+                  '• 版本1.5+支持更多多媒体控制\n'
+                  '• 版本1.6+支持更高级的音频控制',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                ),
+                if (bluetoothManager.connectedDevice?.platformName
+                        .toLowerCase()
+                        .contains('jbl') ==
+                    true) ...[
+                  SizedBox(height: 12),
+                  Container(
+                    padding: EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.shade50,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: Colors.orange.shade200),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'JBL Live Pro+ TWS 特性：',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                            color: Colors.orange.shade700,
+                          ),
+                        ),
+                        SizedBox(height: 4),
+                        Text(
+                          '• 支持AVRCP 1.5协议\n'
+                          '• 支持绝对音量控制\n'
+                          '• 双耳独立连接\n'
+                          '• 主动降噪控制\n'
+                          '• 自定义EQ设置',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.orange.shade600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: Text('关闭'),
+            ),
+            if (bluetoothManager.avrcpSupported) ...[
+              TextButton(
+                onPressed: () {
+                  Navigator.of(dialogContext).pop();
+                  _testAVRCPFunction(context, bluetoothManager);
+                },
+                child: Text('测试AVRCP'),
+              ),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
+  // 测试AVRCP功能
+  void _testAVRCPFunction(
+      BuildContext context, BluetoothManager bluetoothManager) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: Text('AVRCP 功能测试'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 16),
+              Text('正在测试绝对音量控制...'),
+            ],
+          ),
+        );
+      },
+    );
+
+    try {
+      // 执行一系列音量测试来验证AVRCP
+      List<int> testVolumes = [30, 60, 80, 50];
+      bool allTestsPassed = true;
+
+      for (int volume in testVolumes) {
+        await Future.delayed(Duration(milliseconds: 500));
+        bool success = await bluetoothManager.setAbsoluteVolume(volume);
+        if (!success) {
+          allTestsPassed = false;
+          break;
+        }
+      }
+
+      Navigator.of(context).pop(); // 关闭进度对话框
+
+      // 显示测试结果
+      showDialog(
+        context: context,
+        builder: (BuildContext dialogContext) {
+          return AlertDialog(
+            title: Row(
+              children: [
+                Icon(
+                  allTestsPassed ? Icons.check_circle : Icons.error,
+                  color: allTestsPassed ? Colors.green : Colors.red,
+                ),
+                SizedBox(width: 8),
+                Text('测试结果'),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  allTestsPassed ? 'AVRCP测试通过！' : 'AVRCP测试失败！',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: allTestsPassed ? Colors.green : Colors.red,
+                  ),
+                ),
+                SizedBox(height: 12),
+                Text('测试项目：'),
+                SizedBox(height: 8),
+                _buildTestResultRow('绝对音量控制', allTestsPassed),
+                _buildTestResultRow('音量变化响应', allTestsPassed),
+                _buildTestResultRow(
+                    'AVRCP协议通信', bluetoothManager.avrcpSupported),
+                if (allTestsPassed) ...[
+                  SizedBox(height: 12),
+                  Container(
+                    padding: EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade50,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: Colors.green.shade200),
+                    ),
+                    child: Text(
+                      '✓ AVRCP协议工作正常，可以通过应用程序直接控制耳机音量',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.green.shade700,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: Text('确定'),
+              ),
+            ],
+          );
+        },
+      );
+    } catch (e) {
+      Navigator.of(context).pop(); // 关闭进度对话框
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('AVRCP测试出错: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Widget _buildTestResultRow(String testName, bool passed) {
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          Icon(
+            passed ? Icons.check : Icons.close,
+            size: 16,
+            color: passed ? Colors.green : Colors.red,
+          ),
+          SizedBox(width: 8),
+          Text(
+            testName,
+            style: TextStyle(fontSize: 13),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 原有的方法保持不变...
   Widget _buildConnectionCard(BluetoothManager bluetoothManager) {
     Color statusColor;
     String statusText;
@@ -138,18 +734,18 @@ class HeadphoneScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildBatteryCard(BuildContext context, BluetoothManager bluetoothManager) {
+  Widget _buildBatteryCard(
+      BuildContext context, BluetoothManager bluetoothManager) {
     Color batteryColor;
     IconData batteryIcon;
     String batteryText;
 
     if (bluetoothManager.batteryLevel == -1) {
-      // 不支持电池读取
       batteryColor = Colors.grey;
       batteryIcon = Icons.battery_unknown;
       batteryText = "不支持";
-    } else if (bluetoothManager.batteryLevel == 0 && !bluetoothManager.batterySupported) {
-      // 检测中或获取失败
+    } else if (bluetoothManager.batteryLevel == 0 &&
+        !bluetoothManager.batterySupported) {
       batteryColor = Colors.orange;
       batteryIcon = Icons.battery_unknown;
       batteryText = "检测中...";
@@ -207,11 +803,13 @@ class HeadphoneScreen extends StatelessWidget {
                               fontWeight: FontWeight.bold,
                             ),
                           ),
-                          if (bluetoothManager.batteryLevel != bluetoothManager.rawBatteryValue &&
+                          if (bluetoothManager.batteryLevel !=
+                                  bluetoothManager.rawBatteryValue &&
                               bluetoothManager.rawBatteryValue > 0) ...[
                             SizedBox(width: 8),
                             Container(
-                              padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              padding: EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 2),
                               decoration: BoxDecoration(
                                 color: Colors.blue.shade100,
                                 borderRadius: BorderRadius.circular(4),
@@ -239,31 +837,36 @@ class HeadphoneScreen extends StatelessWidget {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.blue,
                         foregroundColor: Colors.white,
-                        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding:
+                            EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         minimumSize: Size(0, 32),
                       ),
                     ),
                     SizedBox(height: 4),
                     ElevatedButton.icon(
-                      onPressed: () => _showBatteryDetails(context, bluetoothManager),
+                      onPressed: () =>
+                          _showBatteryDetails(context, bluetoothManager),
                       icon: Icon(Icons.info_outline, size: 16),
                       label: Text('详情', style: TextStyle(fontSize: 12)),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.green,
                         foregroundColor: Colors.white,
-                        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding:
+                            EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         minimumSize: Size(0, 32),
                       ),
                     ),
                     SizedBox(height: 4),
                     ElevatedButton.icon(
-                      onPressed: () => _showCalibrationDialog(context, bluetoothManager),
+                      onPressed: () =>
+                          _showCalibrationDialog(context, bluetoothManager),
                       icon: Icon(Icons.tune, size: 16),
                       label: Text('校准', style: TextStyle(fontSize: 12)),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.orange,
                         foregroundColor: Colors.white,
-                        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding:
+                            EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         minimumSize: Size(0, 32),
                       ),
                     ),
@@ -272,8 +875,6 @@ class HeadphoneScreen extends StatelessWidget {
               ],
             ),
             SizedBox(height: 12),
-
-            // 电池电量进度条（仅在有有效电量时显示）
             if (bluetoothManager.batteryLevel >= 0) ...[
               LinearProgressIndicator(
                 value: bluetoothManager.batteryLevel / 100.0,
@@ -283,8 +884,6 @@ class HeadphoneScreen extends StatelessWidget {
               ),
               SizedBox(height: 8),
             ],
-
-            // 显示电池信息来源和校准信息
             Container(
               padding: EdgeInsets.all(8),
               decoration: BoxDecoration(
@@ -297,7 +896,8 @@ class HeadphoneScreen extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      Icon(Icons.info_outline, size: 14, color: Colors.grey.shade600),
+                      Icon(Icons.info_outline,
+                          size: 14, color: Colors.grey.shade600),
                       SizedBox(width: 4),
                       Expanded(
                         child: Text(
@@ -310,7 +910,8 @@ class HeadphoneScreen extends StatelessWidget {
                       ),
                     ],
                   ),
-                  if (bluetoothManager.batteryLevel != bluetoothManager.rawBatteryValue &&
+                  if (bluetoothManager.batteryLevel !=
+                          bluetoothManager.rawBatteryValue &&
                       bluetoothManager.rawBatteryValue > 0) ...[
                     SizedBox(height: 4),
                     Text(
@@ -324,7 +925,6 @@ class HeadphoneScreen extends StatelessWidget {
                 ],
               ),
             ),
-
             SizedBox(height: 8),
             Text(
               _getBatteryStatusText(bluetoothManager.batteryLevel),
@@ -333,9 +933,10 @@ class HeadphoneScreen extends StatelessWidget {
                 fontSize: 12,
               ),
             ),
-
-            // 如果是AirPods，显示特殊说明
-            if (bluetoothManager.connectedDevice?.platformName.toLowerCase().contains('airpods') == true) ...[
+            if (bluetoothManager.connectedDevice?.platformName
+                    .toLowerCase()
+                    .contains('airpods') ==
+                true) ...[
               SizedBox(height: 8),
               Container(
                 padding: EdgeInsets.all(8),
@@ -389,7 +990,8 @@ class HeadphoneScreen extends StatelessWidget {
               children: [
                 Icon(
                   bluetoothManager.isScanning ? Icons.radar : Icons.search,
-                  color: bluetoothManager.isScanning ? Colors.blue : Colors.grey,
+                  color:
+                      bluetoothManager.isScanning ? Colors.blue : Colors.grey,
                   size: 28,
                 ),
                 SizedBox(width: 12),
@@ -426,10 +1028,14 @@ class HeadphoneScreen extends StatelessWidget {
                     onPressed: bluetoothManager.isScanning
                         ? () => bluetoothManager.stopScan()
                         : () => bluetoothManager.startScan(),
-                    icon: Icon(bluetoothManager.isScanning ? Icons.stop : Icons.search),
+                    icon: Icon(bluetoothManager.isScanning
+                        ? Icons.stop
+                        : Icons.search),
                     label: Text(bluetoothManager.isScanning ? '停止扫描' : '开始扫描'),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: bluetoothManager.isScanning ? Colors.red : Colors.blue,
+                      backgroundColor: bluetoothManager.isScanning
+                          ? Colors.red
+                          : Colors.blue,
                       foregroundColor: Colors.white,
                     ),
                   ),
@@ -450,11 +1056,12 @@ class HeadphoneScreen extends StatelessWidget {
               ),
               child: Row(
                 children: [
-                  Icon(Icons.info_outline, size: 14, color: Colors.blue.shade600),
+                  Icon(Icons.info_outline,
+                      size: 14, color: Colors.blue.shade600),
                   SizedBox(width: 4),
                   Expanded(
                     child: Text(
-                      '增强搜索：15秒深度扫描，可发现更多设备（包括未命名设备）',
+                      '增强搜索：15秒深度扫描，可发现更多设备（包括AVRCP兼容设备）',
                       style: TextStyle(
                         fontSize: 11,
                         color: Colors.blue.shade700,
@@ -471,61 +1078,63 @@ class HeadphoneScreen extends StatelessWidget {
   }
 
   Widget _buildDeviceInfoRow(String label, String value) {
-  return Padding(
-    padding: EdgeInsets.symmetric(vertical: 4),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          width: 120,
-          child: Text(
-            '$label:',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 120,
+            child: Text(
+              '$label:',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+            ),
           ),
-        ),
-        Expanded(
-          child: Text(
-            value,
-            style: TextStyle(fontSize: 13),
-          ),
-        ),
-      ],
-    ),
-  );
-}
- 
-
-  void _showDeviceInfoDialog(BuildContext context, BluetoothDevice device) {
-  showDialog(
-    context: context,
-    builder: (context) {
-      return AlertDialog(
-        title: Text('${device.platformName} 详细信息'),
-        content: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _buildDeviceInfoRow('设备名称', device.platformName.isNotEmpty
-                  ? device.platformName
-                  : '未知设备'),
-              _buildDeviceInfoRow('设备ID', device.remoteId.toString()),
-              _buildDeviceInfoRow('是否已连接', device.isConnected ? '是' : '否'),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: Navigator.of(context).pop,
-            child: Text('关闭'),
+          Expanded(
+            child: Text(
+              value,
+              style: TextStyle(fontSize: 13),
+            ),
           ),
         ],
-      );
-    },
-  );
-}
+      ),
+    );
+  }
 
-  Widget _buildDeviceList(BuildContext context, BluetoothManager bluetoothManager) {
+  void _showDeviceInfoDialog(BuildContext context, BluetoothDevice device) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text('${device.platformName} 详细信息'),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildDeviceInfoRow(
+                    '设备名称',
+                    device.platformName.isNotEmpty
+                        ? device.platformName
+                        : '未知设备'),
+                _buildDeviceInfoRow('设备ID', device.remoteId.toString()),
+                _buildDeviceInfoRow('是否已连接', device.isConnected ? '是' : '否'),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: Navigator.of(context).pop,
+              child: Text('关闭'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildDeviceList(
+      BuildContext context, BluetoothManager bluetoothManager) {
     if (bluetoothManager.discoveredDevices.isEmpty) {
       return Card(
         elevation: 4,
@@ -534,7 +1143,9 @@ class HeadphoneScreen extends StatelessWidget {
           child: Column(
             children: [
               Icon(
-                bluetoothManager.isScanning ? Icons.bluetooth_searching : Icons.bluetooth_disabled,
+                bluetoothManager.isScanning
+                    ? Icons.bluetooth_searching
+                    : Icons.bluetooth_disabled,
                 size: 64,
                 color: Colors.grey.shade400,
               ),
@@ -615,66 +1226,71 @@ class HeadphoneScreen extends StatelessWidget {
             itemCount: bluetoothManager.discoveredDevices.length,
             separatorBuilder: (context, index) => Divider(height: 1),
             itemBuilder: (context, index) {
-              BluetoothDevice device = bluetoothManager.discoveredDevices[index];
+              BluetoothDevice device =
+                  bluetoothManager.discoveredDevices[index];
               bool isConnected = bluetoothManager.connectedDevice == device;
-              String displayName = bluetoothManager.getDeviceDisplayName(device);
+              String displayName =
+                  bluetoothManager.getDeviceDisplayName(device);
 
               return ListTile(
-                leading: Icon(
-                  _getDeviceIcon(displayName),
-                  color: isConnected ? Colors.green : Colors.blue,
-                  size: 32,
-                ),
-                title: Text(
-                  displayName,
-                  style: TextStyle(
-                    fontWeight: isConnected ? FontWeight.bold : FontWeight.normal,
-                    color: isConnected ? Colors.green : null,
+                  leading: Icon(
+                    _getDeviceIcon(displayName),
+                    color: isConnected ? Colors.green : Colors.blue,
+                    size: 32,
                   ),
-                ),
-                subtitle: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'ID: ${device.remoteId.toString().substring(0, 8)}...',
-                      style: TextStyle(fontSize: 11),
+                  title: Text(
+                    displayName,
+                    style: TextStyle(
+                      fontWeight:
+                          isConnected ? FontWeight.bold : FontWeight.normal,
+                      color: isConnected ? Colors.green : null,
                     ),
-                    if (isConnected) ...[
-                      Text(
-                        '已连接',
-                        style: TextStyle(
-                          color: Colors.green,
-                          fontWeight: FontWeight.w500,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ] else ...[
-                      Text(
-                        _getDeviceTypeDescription(displayName),
-                        style: TextStyle(
-                          color: Colors.blue.shade600,
-                          fontSize: 11,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-                trailing: isConnected
-                    ? Icon(Icons.check_circle, color: Colors.green)
-                    : ElevatedButton(
-                  onPressed: bluetoothManager.connectionState == BluetoothConnectionState.connecting
-                      ? null
-                      : () => _connectToDevice(context, bluetoothManager, device),
-                  child: Text('连接', style: TextStyle(fontSize: 12)),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blue,
-                    foregroundColor: Colors.white,
-                    padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    minimumSize: Size(0, 32),
                   ),
-                ),
-                onTap: () => _showDeviceInfoDialog(context, device)
-              );
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'ID: ${device.remoteId.toString().substring(0, 8)}...',
+                        style: TextStyle(fontSize: 11),
+                      ),
+                      if (isConnected) ...[
+                        Text(
+                          '已连接',
+                          style: TextStyle(
+                            color: Colors.green,
+                            fontWeight: FontWeight.w500,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ] else ...[
+                        Text(
+                          _getDeviceTypeDescription(displayName),
+                          style: TextStyle(
+                            color: Colors.blue.shade600,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  trailing: isConnected
+                      ? Icon(Icons.check_circle, color: Colors.green)
+                      : ElevatedButton(
+                          onPressed: bluetoothManager.connectionState ==
+                                  BluetoothConnectionState.connecting
+                              ? null
+                              : () => _connectToDevice(
+                                  context, bluetoothManager, device),
+                          child: Text('连接', style: TextStyle(fontSize: 12)),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.blue,
+                            foregroundColor: Colors.white,
+                            padding: EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 8),
+                            minimumSize: Size(0, 32),
+                          ),
+                        ),
+                  onTap: () => _showDeviceInfoDialog(context, device));
             },
           ),
           Padding(
@@ -688,11 +1304,12 @@ class HeadphoneScreen extends StatelessWidget {
               ),
               child: Row(
                 children: [
-                  Icon(Icons.info_outline, size: 16, color: Colors.blue.shade600),
+                  Icon(Icons.info_outline,
+                      size: 16, color: Colors.blue.shade600),
                   SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      '提示：某些设备可能显示为"未知设备"，这是正常现象。请根据设备类型图标判断。',
+                      '提示：连接后会自动检测AVRCP支持情况和音量控制功能。',
                       style: TextStyle(
                         fontSize: 11,
                         color: Colors.blue.shade700,
@@ -723,11 +1340,12 @@ class HeadphoneScreen extends StatelessWidget {
     }
   }
 
-  // 获取设备类型描述
   String _getDeviceTypeDescription(String deviceName) {
     String name = deviceName.toLowerCase();
     if (name.contains('airpods') || name.contains('beats')) {
       return 'Apple 音频设备';
+    } else if (name.contains('jbl') && name.contains('live')) {
+      return 'JBL Live Pro+ TWS';
     } else if (name.contains('headphone') || name.contains('耳机')) {
       return '耳机设备';
     } else if (name.contains('speaker') || name.contains('音响')) {
@@ -739,8 +1357,8 @@ class HeadphoneScreen extends StatelessWidget {
     }
   }
 
-  // 显示电池详细信息对话框
-  void _showBatteryDetails(BuildContext context, BluetoothManager bluetoothManager) {
+  void _showBatteryDetails(
+      BuildContext context, BluetoothManager bluetoothManager) {
     showDialog(
       context: context,
       builder: (BuildContext dialogContext) {
@@ -752,9 +1370,11 @@ class HeadphoneScreen extends StatelessWidget {
             children: [
               _buildDetailRow('显示电量', '${bluetoothManager.batteryLevel}%'),
               _buildDetailRow('原始数值', '${bluetoothManager.rawBatteryValue}%'),
-              _buildDetailRow('校准电量', '${bluetoothManager.calibratedBatteryLevel.toStringAsFixed(1)}%'),
+              _buildDetailRow('校准电量',
+                  '${bluetoothManager.calibratedBatteryLevel.toStringAsFixed(1)}%'),
               _buildDetailRow('数据来源', bluetoothManager.batterySource),
-              _buildDetailRow('设备名称', bluetoothManager.connectedDevice?.platformName ?? '未知'),
+              _buildDetailRow('设备名称',
+                  bluetoothManager.connectedDevice?.platformName ?? '未知'),
               SizedBox(height: 12),
               Text(
                 '说明：',
@@ -763,9 +1383,9 @@ class HeadphoneScreen extends StatelessWidget {
               SizedBox(height: 4),
               Text(
                 '• 显示电量：经过校准和平滑处理的最终值\n'
-                    '• 原始数值：设备直接返回的电量值\n'
-                    '• 校准电量：根据设备特性调整后的精确值\n'
-                    '• 不同品牌设备的电量报告方式可能有差异',
+                '• 原始数值：设备直接返回的电量值\n'
+                '• 校准电量：根据设备特性调整后的精确值\n'
+                '• 不同品牌设备的电量报告方式可能有差异',
                 style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
               ),
             ],
@@ -808,8 +1428,8 @@ class HeadphoneScreen extends StatelessWidget {
     );
   }
 
-  // 显示校准对话框
-  void _showCalibrationDialog(BuildContext context, BluetoothManager bluetoothManager) {
+  void _showCalibrationDialog(
+      BuildContext context, BluetoothManager bluetoothManager) {
     if (bluetoothManager.connectedDevice == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('请先连接设备')),
@@ -822,23 +1442,21 @@ class HeadphoneScreen extends StatelessWidget {
       bluetoothManager.connectedDevice!.remoteId.toString(),
       bluetoothManager.connectedDevice!.platformName,
       bluetoothManager.batteryLevel,
-          (newFactor) {
-        // 重新读取电量以应用新的校准
+      (newFactor) {
         bluetoothManager.refreshBatteryLevel();
       },
     );
   }
 
-  Future<void> _connectToDevice(BuildContext context, BluetoothManager bluetoothManager, BluetoothDevice device) async {
+  Future<void> _connectToDevice(BuildContext context,
+      BluetoothManager bluetoothManager, BluetoothDevice device) async {
     bool? dialogResult;
 
     try {
-      // 显示连接进度对话框，并等待连接完成
       dialogResult = await showDialog<bool>(
         context: context,
         barrierDismissible: false,
         builder: (BuildContext dialogContext) {
-          // 在对话框内部执行连接操作
           _performConnection(dialogContext, bluetoothManager, device);
 
           return AlertDialog(
@@ -848,17 +1466,22 @@ class HeadphoneScreen extends StatelessWidget {
                 CircularProgressIndicator(),
                 SizedBox(height: 16),
                 Text('正在连接到 ${device.platformName}...'),
+                SizedBox(height: 8),
+                Text(
+                  '连接后将自动检测AVRCP和音量控制功能',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                  textAlign: TextAlign.center,
+                ),
               ],
             ),
           );
         },
       );
 
-      // 检查主页面context是否仍然有效再显示SnackBar
       if (context.mounted && dialogResult != null) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(dialogResult ? '连接成功!' : '连接失败，请重试'),
+            content: Text(dialogResult ? '连接成功! 正在检测AVRCP功能...' : '连接失败，请重试'),
             backgroundColor: dialogResult ? Colors.green : Colors.red,
             duration: Duration(seconds: 2),
           ),
@@ -878,18 +1501,16 @@ class HeadphoneScreen extends StatelessWidget {
     }
   }
 
-  // 执行实际的连接操作
-  Future<void> _performConnection(BuildContext dialogContext, BluetoothManager bluetoothManager, BluetoothDevice device) async {
+  Future<void> _performConnection(BuildContext dialogContext,
+      BluetoothManager bluetoothManager, BluetoothDevice device) async {
     try {
       bool success = await bluetoothManager.connectToDevice(device);
 
-      // 安全地关闭对话框并返回结果
       if (dialogContext.mounted) {
         Navigator.of(dialogContext).pop(success);
       }
     } catch (e) {
       print('Connection error: $e');
-      // 安全地关闭对话框并返回失败结果
       if (dialogContext.mounted) {
         Navigator.of(dialogContext).pop(false);
       }

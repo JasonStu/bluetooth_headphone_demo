@@ -1,8 +1,11 @@
-name: bluetooth_headphone_demo
-description: A Flutter demo project for Bluetooth headphone connection and battery management.
+name: bluetooth_headphone_avrcp
+description: Enhanced Bluetooth headphone manager with AVRCP support and absolute volume control
 
-publish_to: 'none'
+# The following line prevents the package from being accidentally published to
+# pub.dev using `flutter pub publish`. This is preferred for private packages.
+publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 
+# The following defines the version and build number for your application.
 version: 1.0.0+1
 
 environment:
@@ -11,16 +14,60 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+
+  # Bluetooth Low Energy support
   flutter_blue_plus: ^1.32.12
-  permission_handler: ^11.0.1
-  provider: ^6.1.1
-  shared_preferences: ^2.2.2
-  cupertino_icons: ^1.0.2
+
+  # State management
+  provider: ^6.1.2
+
+  # Permissions handling
+  permission_handler: ^11.3.1
+
+  # Local data storage for calibration
+  shared_preferences: ^2.2.3
+
+  # UI icons
+  cupertino_icons: ^1.0.6
+
+  # For device information (optional)
+  device_info_plus: ^10.1.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^3.0.0
 
+  # Linting
+  flutter_lints: ^4.0.0
+
+# For information on the generic Dart part of this file, see the
+# following page: https://dart.dev/tools/pub/pubspec
+
+# The following section is specific to Flutter packages.
 flutter:
+  # The following line ensures that the Material Icons font is
+  # included with your application, so that you can use the icons in
+  # the material Icons class.
   uses-material-design: true
+
+  # Enable null safety and code generation
+  generate: true
+
+# Development notes:
+# To build and run this application:
+# 1. flutter pub get
+# 2. For Android: Ensure Bluetooth permissions are granted in AndroidManifest.xml
+# 3. For iOS: Ensure Bluetooth usage descriptions are in Info.plist
+# 4. Connect to a Bluetooth audio device
+# 5. Test AVRCP functionality through the volume control features
+#
+# Required Android permissions (add to android/app/src/main/AndroidManifest.xml):
+# <uses-permission android:name="android.permission.BLUETOOTH" />
+# <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+# <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+# <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
+# <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+#
+# Required iOS configuration (add to ios/Runner/Info.plist):
+# <key>NSBluetoothAlwaysUsageDescription</key>
+# <string>This app uses Bluetooth to control headphones via AVRCP protocol</string>

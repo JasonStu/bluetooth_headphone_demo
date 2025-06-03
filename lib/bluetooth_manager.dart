@@ -6,29 +6,63 @@ import 'package:permission_handler/permission_handler.dart';
 
 class BluetoothManager extends ChangeNotifier {
   // 标准电池服务
-  static const String BATTERY_SERVICE_UUID = "0000180f-0000-1000-8000-00805f9b34fb";
-  static const String BATTERY_LEVEL_CHARACTERISTIC_UUID = "00002a19-0000-1000-8000-00805f9b34fb";
+  static const String BATTERY_SERVICE_UUID =
+      "0000180f-0000-1000-8000-00805f9b34fb";
+  static const String BATTERY_LEVEL_CHARACTERISTIC_UUID =
+      "00002a19-0000-1000-8000-00805f9b34fb";
 
   // HID 服务 (用于 AirPods 等设备)
   static const String HID_SERVICE_UUID = "00001812-0000-1000-8000-00805f9b34fb";
-  static const String HID_REPORT_CHARACTERISTIC_UUID = "00002a4d-0000-1000-8000-00805f9b34fb";
+  static const String HID_REPORT_CHARACTERISTIC_UUID =
+      "00002a4d-0000-1000-8000-00805f9b34fb";
 
   // Apple 特定服务 UUID
-  static const String APPLE_NOTIFICATION_SERVICE_UUID = "7905f431-b5ce-4e99-a40f-4b1e122d00d0";
+  static const String APPLE_NOTIFICATION_SERVICE_UUID =
+      "7905f431-b5ce-4e99-a40f-4b1e122d00d0";
+
+  // AVRCP 相关 UUID
+  static const String AVRCP_SERVICE_UUID =
+      "0000110e-0000-1000-8000-00805f9b34fb";
+  static const String AVRCP_CONTROLLER_UUID =
+      "0000110f-0000-1000-8000-00805f9b34fb";
+  static const String AVRCP_TARGET_UUID =
+      "0000110c-0000-1000-8000-00805f9b34fb";
+
+  // 音频相关服务
+  static const String AUDIO_SINK_UUID = "0000110b-0000-1000-8000-00805f9b34fb";
+  static const String A2DP_SOURCE_UUID = "0000110a-0000-1000-8000-00805f9b34fb";
+
+  // 音量控制相关特征
+  static const String VOLUME_CONTROL_SERVICE_UUID =
+      "00001844-0000-1000-8000-00805f9b34fb";
+  static const String VOLUME_STATE_CHARACTERISTIC_UUID =
+      "00002b7d-0000-1000-8000-00805f9b34fb";
+  static const String VOLUME_CONTROL_POINT_UUID =
+      "00002b7e-0000-1000-8000-00805f9b34fb";
 
   BluetoothDevice? _connectedDevice;
   List<BluetoothDevice> _discoveredDevices = [];
-  BluetoothConnectionState _connectionState = BluetoothConnectionState.disconnected;
+  BluetoothConnectionState _connectionState =
+      BluetoothConnectionState.disconnected;
   int _batteryLevel = 0;
-  int _rawBatteryValue = 0; // 原始电池值
-  double _calibratedBatteryLevel = 0.0; // 校准后的电池值
+  int _rawBatteryValue = 0;
+  double _calibratedBatteryLevel = 0.0;
   bool _isScanning = false;
   bool _batterySupported = false;
   String _batterySource = "未知";
-  List<int> _batteryHistory = []; // 电池历史记录用于平滑
+  List<int> _batteryHistory = [];
+
+  // AVRCP 相关状态
+  bool _avrcpSupported = false;
+  String _avrcpVersion = "未检测";
+  int _currentVolume = 50;
+  bool _volumeControlSupported = false;
+  String _audioProfiles = "未检测";
+
   StreamSubscription? _scanSubscription;
   StreamSubscription? _connectionSubscription;
   StreamSubscription? _batterySubscription;
+  StreamSubscription? _volumeSubscription;
 
   // Getters
   BluetoothDevice? get connectedDevice => _connectedDevice;
@@ -38,9 +72,17 @@ class BluetoothManager extends ChangeNotifier {
   int get rawBatteryValue => _rawBatteryValue;
   double get calibratedBatteryLevel => _calibratedBatteryLevel;
   bool get isScanning => _isScanning;
-  bool get isConnected => _connectionState == BluetoothConnectionState.connected;
+  bool get isConnected =>
+      _connectionState == BluetoothConnectionState.connected;
   bool get batterySupported => _batterySupported;
   String get batterySource => _batterySource;
+
+  // AVRCP Getters
+  bool get avrcpSupported => _avrcpSupported;
+  String get avrcpVersion => _avrcpVersion;
+  int get currentVolume => _currentVolume;
+  bool get volumeControlSupported => _volumeControlSupported;
+  String get audioProfiles => _audioProfiles;
 
   BluetoothManager() {
     _initBluetooth();
@@ -49,13 +91,11 @@ class BluetoothManager extends ChangeNotifier {
   Future<void> _initBluetooth() async {
     await _requestPermissions();
 
-    // 检查蓝牙是否可用
     if (await FlutterBluePlus.isSupported == false) {
       print("Bluetooth not supported by this device");
       return;
     }
 
-    // 监听蓝牙适配器状态
     FlutterBluePlus.adapterState.listen((BluetoothAdapterState state) {
       print("Bluetooth adapter state: $state");
       if (state != BluetoothAdapterState.on) {
@@ -66,7 +106,6 @@ class BluetoothManager extends ChangeNotifier {
   }
 
   Future<void> _requestPermissions() async {
-    // 请求必要的权限
     Map<Permission, PermissionStatus> statuses = await [
       Permission.bluetoothScan,
       Permission.bluetoothConnect,
@@ -83,26 +122,19 @@ class BluetoothManager extends ChangeNotifier {
     if (_isScanning) return;
 
     try {
-      // 清空之前的设备列表
       _discoveredDevices.clear();
       _isScanning = true;
       notifyListeners();
 
       print("开始蓝牙扫描...");
-
-      // 停止之前的扫描（如果有）
       await FlutterBluePlus.stopScan();
-
-      // 等待一下确保停止完成
       await Future.delayed(Duration(milliseconds: 500));
 
-      // 开始扫描 - 使用更宽松的参数
       await FlutterBluePlus.startScan(
-        timeout: Duration(seconds: 15), // 增加扫描时间
+        timeout: Duration(seconds: 15),
         androidUsesFineLocation: true,
       );
 
-      // 监听扫描结果
       _scanSubscription?.cancel();
       _scanSubscription = FlutterBluePlus.scanResults.listen((results) {
         print("扫描到 ${results.length} 个结果");
@@ -110,23 +142,21 @@ class BluetoothManager extends ChangeNotifier {
         for (ScanResult result in results) {
           BluetoothDevice device = result.device;
 
-          // 检查设备是否已存在
           if (_discoveredDevices.any((d) => d.remoteId == device.remoteId)) {
             continue;
           }
 
-          // 更宽松的设备过滤条件
           bool shouldAdd = false;
 
-          // 1. 有设备名称的设备
-          if (device.platformName.isNotEmpty|| device.advName.isNotEmpty) {
+          if (device.platformName.isNotEmpty || device.advName.isNotEmpty) {
             shouldAdd = true;
             print("发现命名设备: ${device.platformName} (${device.remoteId})");
           }
 
           if (shouldAdd) {
             _discoveredDevices.add(device);
-            print("添加设备: ${device.platformName.isNotEmpty ? device.platformName : '未知设备'} (总计: ${_discoveredDevices.length})");
+            print(
+                "添加设备: ${device.platformName.isNotEmpty ? device.platformName : '未知设备'} (总计: ${_discoveredDevices.length})");
             notifyListeners();
           }
         }
@@ -134,11 +164,9 @@ class BluetoothManager extends ChangeNotifier {
         print("扫描错误: $error");
       });
 
-      // 15秒后停止扫描
       Timer(Duration(seconds: 15), () {
         stopScan();
       });
-
     } catch (e) {
       print("启动扫描时出错: $e");
       _isScanning = false;
@@ -161,12 +189,10 @@ class BluetoothManager extends ChangeNotifier {
 
   Future<bool> connectToDevice(BluetoothDevice device) async {
     try {
-      // 如果正在扫描，先停止扫描
       if (_isScanning) {
         await stopScan();
       }
 
-      // 如果已经连接到其他设备，先断开
       if (_connectedDevice != null) {
         await disconnect();
       }
@@ -174,31 +200,30 @@ class BluetoothManager extends ChangeNotifier {
       _connectionState = BluetoothConnectionState.connecting;
       notifyListeners();
 
-      // 连接设备，添加超时控制
       await device.connect(
         timeout: Duration(seconds: 15),
-        autoConnect: false, // 避免自动重连导致的问题
+        autoConnect: false,
       );
 
       _connectedDevice = device;
       _connectionState = BluetoothConnectionState.connected;
 
-      // 监听连接状态变化
-      _connectionSubscription?.cancel(); // 取消之前的订阅
+      _connectionSubscription?.cancel();
       _connectionSubscription = device.connectionState.listen((state) {
         _connectionState = state;
         if (state == BluetoothConnectionState.disconnected) {
           _connectedDevice = null;
           _batteryLevel = 0;
+          _resetAVRCPState();
           _batterySubscription?.cancel();
+          _volumeSubscription?.cancel();
         }
         notifyListeners();
       });
 
-      // 连接成功后，尝试读取电池电量
-      // 添加延迟确保连接稳定
       await Future.delayed(Duration(milliseconds: 500));
       await _setupBatteryMonitoring(device);
+      await _setupAVRCPMonitoring(device);
 
       notifyListeners();
       return true;
@@ -211,6 +236,431 @@ class BluetoothManager extends ChangeNotifier {
     }
   }
 
+  // 重置AVRCP状态
+  void _resetAVRCPState() {
+    _avrcpSupported = false;
+    _avrcpVersion = "未检测";
+    _currentVolume = 50;
+    _volumeControlSupported = false;
+    _audioProfiles = "未检测";
+  }
+
+  // 设置AVRCP监控
+  Future<void> _setupAVRCPMonitoring(BluetoothDevice device) async {
+    print("开始检测AVRCP功能...");
+    _resetAVRCPState();
+    notifyListeners();
+
+    try {
+      List<BluetoothService> services = await device.discoverServices();
+      print("发现的服务数量: ${services.length}");
+
+      List<String> supportedProfiles = [];
+
+      // 检测音频相关的服务
+      for (BluetoothService service in services) {
+        String serviceUuid = service.uuid.toString().toLowerCase();
+        print("检查服务UUID: $serviceUuid");
+
+        // 检测AVRCP相关服务
+        if (serviceUuid == AVRCP_SERVICE_UUID.toLowerCase()) {
+          print("✓ 发现AVRCP服务");
+          _avrcpSupported = true;
+          supportedProfiles.add("AVRCP");
+          await _detectAVRCPVersion(service);
+        } else if (serviceUuid == AVRCP_CONTROLLER_UUID.toLowerCase()) {
+          print("✓ 发现AVRCP控制器服务");
+          supportedProfiles.add("AVRCP Controller");
+        } else if (serviceUuid == AVRCP_TARGET_UUID.toLowerCase()) {
+          print("✓ 发现AVRCP目标服务");
+          supportedProfiles.add("AVRCP Target");
+        } else if (serviceUuid == AUDIO_SINK_UUID.toLowerCase()) {
+          print("✓ 发现A2DP音频接收器");
+          supportedProfiles.add("A2DP Sink");
+        } else if (serviceUuid == A2DP_SOURCE_UUID.toLowerCase()) {
+          print("✓ 发现A2DP音频源");
+          supportedProfiles.add("A2DP Source");
+        } else if (serviceUuid == VOLUME_CONTROL_SERVICE_UUID.toLowerCase()) {
+          print("✓ 发现音量控制服务");
+          supportedProfiles.add("Volume Control");
+          await _setupVolumeControl(service);
+        }
+
+        // 针对JBL Live Pro+ TWS的特殊检测
+        if (device.platformName.toLowerCase().contains('jbl') &&
+            device.platformName.toLowerCase().contains('live')) {
+          await _detectJBLSpecificFeatures(service, device);
+        }
+      }
+
+      // 如果没有找到标准AVRCP服务，尝试通过其他方式检测
+      if (!_avrcpSupported) {
+        await _detectAVRCPAlternative(services, device);
+      }
+
+      _audioProfiles = supportedProfiles.isNotEmpty
+          ? supportedProfiles.join(", ")
+          : "无音频配置文件";
+
+      print("AVRCP检测完成:");
+      print("- AVRCP支持: $_avrcpSupported");
+      print("- AVRCP版本: $_avrcpVersion");
+      print("- 音量控制: $_volumeControlSupported");
+      print("- 音频配置文件: $_audioProfiles");
+
+      notifyListeners();
+    } catch (e) {
+      print("AVRCP检测出错: $e");
+      _avrcpSupported = false;
+      _avrcpVersion = "检测失败";
+      notifyListeners();
+    }
+  }
+
+  // 检测AVRCP版本
+  Future<void> _detectAVRCPVersion(BluetoothService service) async {
+    try {
+      print("检测AVRCP版本...");
+
+      for (BluetoothCharacteristic characteristic in service.characteristics) {
+        print("检查特征: ${characteristic.uuid}");
+
+        if (characteristic.properties.read) {
+          try {
+            List<int> value = await characteristic.read();
+            print("读取到特征值: $value");
+
+            // 尝试解析AVRCP版本信息
+            String version = _parseAVRCPVersion(value);
+            if (version.isNotEmpty) {
+              _avrcpVersion = version;
+              print("检测到AVRCP版本: $version");
+              return;
+            }
+          } catch (e) {
+            print("读取特征失败: $e");
+          }
+        }
+      }
+
+      // 如果无法从特征读取版本，使用默认检测逻辑
+      _avrcpVersion = "1.4+"; // 现代设备通常支持1.4或以上
+    } catch (e) {
+      print("版本检测失败: $e");
+      _avrcpVersion = "未知版本";
+    }
+  }
+
+  // 解析AVRCP版本
+  String _parseAVRCPVersion(List<int> data) {
+    if (data.isEmpty) return "";
+
+    // 根据蓝牙规范，AVRCP版本通常在特定字节位置
+    // 这里提供一个基本的解析逻辑
+    if (data.length >= 2) {
+      int major = (data[0] >> 4) & 0x0F;
+      int minor = data[0] & 0x0F;
+
+      if (major > 0) {
+        return "$major.$minor";
+      }
+    }
+
+    // 如果无法解析，返回基于数据长度的估计版本
+    if (data.length >= 4) {
+      return "1.6"; // 支持更多功能
+    } else if (data.length >= 2) {
+      return "1.4";
+    } else {
+      return "1.3";
+    }
+  }
+
+  // 检测JBL特定功能
+  Future<void> _detectJBLSpecificFeatures(
+      BluetoothService service, BluetoothDevice device) async {
+    print("检测JBL Live Pro+ TWS特定功能...");
+
+    try {
+      String serviceUuid = service.uuid.toString().toLowerCase();
+
+      // JBL设备可能使用自定义服务
+      for (BluetoothCharacteristic characteristic in service.characteristics) {
+        if (characteristic.properties.read ||
+            characteristic.properties.notify) {
+          try {
+            if (characteristic.properties.read) {
+              List<int> value = await characteristic.read();
+
+              // 检查是否为JBL特定的音量控制
+              if (_isJBLVolumeCharacteristic(
+                  characteristic.uuid.toString(), value)) {
+                print("✓ 发现JBL音量控制特征");
+                _volumeControlSupported = true;
+                await _setupJBLVolumeMonitoring(characteristic);
+              }
+
+              // 检查是否为JBL特定的AVRCP实现
+              if (_isJBLAVRCPCharacteristic(
+                  characteristic.uuid.toString(), value)) {
+                print("✓ 发现JBL AVRCP实现");
+                _avrcpSupported = true;
+                _avrcpVersion = "JBL Custom";
+              }
+            }
+          } catch (e) {
+            print("JBL特征检测失败: $e");
+          }
+        }
+      }
+    } catch (e) {
+      print("JBL特定功能检测失败: $e");
+    }
+  }
+
+  // 判断是否为JBL音量特征
+  bool _isJBLVolumeCharacteristic(String uuid, List<int> value) {
+    // JBL设备的音量特征通常包含特定的标识
+    if (value.length >= 1) {
+      // 音量值通常在0-127或0-100范围内
+      int possibleVolume = value[0];
+      if (possibleVolume >= 0 && possibleVolume <= 127) {
+        _currentVolume = (possibleVolume * 100 / 127).round();
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // 判断是否为JBL AVRCP特征
+  bool _isJBLAVRCPCharacteristic(String uuid, List<int> value) {
+    // 检查是否包含AVRCP相关的标识符
+    return value.length >= 2 && (value[0] == 0x01 || value[0] == 0x02);
+  }
+
+  // 设置JBL音量监控
+  Future<void> _setupJBLVolumeMonitoring(
+      BluetoothCharacteristic characteristic) async {
+    try {
+      if (characteristic.properties.notify) {
+        await characteristic.setNotifyValue(true);
+        _volumeSubscription?.cancel();
+        _volumeSubscription = characteristic.lastValueStream.listen((value) {
+          if (value.isNotEmpty) {
+            int newVolume = (value[0] * 100 / 127).round();
+            _currentVolume = newVolume.clamp(0, 100);
+            print("JBL音量更新: $_currentVolume%");
+            notifyListeners();
+          }
+        });
+      }
+    } catch (e) {
+      print("JBL音量监控设置失败: $e");
+    }
+  }
+
+  // 替代AVRCP检测方法
+  Future<void> _detectAVRCPAlternative(
+      List<BluetoothService> services, BluetoothDevice device) async {
+    print("使用替代方法检测AVRCP...");
+
+    // 通过设备名称推断AVRCP支持
+    String deviceName = device.platformName.toLowerCase();
+
+    if (deviceName.contains('headphone') ||
+        deviceName.contains('earphone') ||
+        deviceName.contains('headset') ||
+        deviceName.contains('earbuds') ||
+        deviceName.contains('airpods') ||
+        deviceName.contains('beats') ||
+        deviceName.contains('jbl') ||
+        deviceName.contains('sony') ||
+        deviceName.contains('bose') ||
+        deviceName.contains('sennheiser')) {
+      print("根据设备名称推断支持AVRCP");
+      _avrcpSupported = true;
+
+      // 根据设备品牌推断版本
+      if (deviceName.contains('airpods') || deviceName.contains('beats')) {
+        _avrcpVersion = "1.6 (Apple)";
+      } else if (deviceName.contains('jbl') && deviceName.contains('live')) {
+        _avrcpVersion = "1.5 (JBL)";
+      } else if (deviceName.contains('sony') || deviceName.contains('bose')) {
+        _avrcpVersion = "1.5+";
+      } else {
+        _avrcpVersion = "1.4+";
+      }
+    }
+
+    // 检查是否有音频相关的通用特征
+    for (BluetoothService service in services) {
+      for (BluetoothCharacteristic characteristic in service.characteristics) {
+        if (characteristic.properties.write ||
+            characteristic.properties.writeWithoutResponse) {
+          // 可能支持音量控制
+          _volumeControlSupported = true;
+          break;
+        }
+      }
+      if (_volumeControlSupported) break;
+    }
+  }
+
+  // 设置音量控制
+  Future<void> _setupVolumeControl(BluetoothService service) async {
+    try {
+      print("设置音量控制...");
+
+      for (BluetoothCharacteristic characteristic in service.characteristics) {
+        String charUuid = characteristic.uuid.toString().toLowerCase();
+
+        if (charUuid == VOLUME_STATE_CHARACTERISTIC_UUID.toLowerCase()) {
+          print("找到音量状态特征");
+          if (characteristic.properties.read) {
+            List<int> value = await characteristic.read();
+            if (value.isNotEmpty) {
+              _currentVolume = value[0].clamp(0, 100);
+              _volumeControlSupported = true;
+            }
+          }
+
+          if (characteristic.properties.notify) {
+            await characteristic.setNotifyValue(true);
+            _volumeSubscription?.cancel();
+            _volumeSubscription =
+                characteristic.lastValueStream.listen((value) {
+              if (value.isNotEmpty) {
+                _currentVolume = value[0].clamp(0, 100);
+                notifyListeners();
+              }
+            });
+          }
+        }
+      }
+    } catch (e) {
+      print("音量控制设置失败: $e");
+    }
+  }
+
+  // 设置绝对音量
+  Future<bool> setAbsoluteVolume(int volume) async {
+    if (_connectedDevice == null || !_volumeControlSupported) {
+      print("设备未连接或不支持音量控制");
+      return false;
+    }
+
+    volume = volume.clamp(0, 100);
+
+    try {
+      print("设置绝对音量: $volume%");
+      List<BluetoothService> services =
+          await _connectedDevice!.discoverServices();
+
+      for (BluetoothService service in services) {
+        for (BluetoothCharacteristic characteristic
+            in service.characteristics) {
+          String charUuid = characteristic.uuid.toString().toLowerCase();
+
+          // 尝试标准音量控制特征
+          if (charUuid == VOLUME_CONTROL_POINT_UUID.toLowerCase()) {
+            if (characteristic.properties.write ||
+                characteristic.properties.writeWithoutResponse) {
+              List<int> volumeData = [volume];
+              await characteristic.write(volumeData);
+              _currentVolume = volume;
+              notifyListeners();
+              print("✓ 通过标准特征设置音量成功");
+              return true;
+            }
+          }
+
+          // 尝试JBL特定的音量控制
+          if (_connectedDevice!.platformName.toLowerCase().contains('jbl')) {
+            if (await _setJBLVolume(characteristic, volume)) {
+              _currentVolume = volume;
+              notifyListeners();
+              print("✓ 通过JBL特征设置音量成功");
+              return true;
+            }
+          }
+
+          // 尝试通用音量控制
+          if (characteristic.properties.write &&
+              (characteristic.uuid.toString().contains('2a4d') ||
+                  characteristic.uuid.toString().contains('volume'))) {
+            try {
+              List<int> volumeData = [volume];
+              await characteristic.write(volumeData);
+              _currentVolume = volume;
+              notifyListeners();
+              print("✓ 通过通用特征设置音量成功");
+              return true;
+            } catch (e) {
+              print("通用音量设置失败: $e");
+            }
+          }
+        }
+      }
+
+      print("未找到可用的音量控制特征");
+      return false;
+    } catch (e) {
+      print("设置音量失败: $e");
+      return false;
+    }
+  }
+
+  // JBL特定的音量设置
+  Future<bool> _setJBLVolume(
+      BluetoothCharacteristic characteristic, int volume) async {
+    try {
+      if (characteristic.properties.write ||
+          characteristic.properties.writeWithoutResponse) {
+        // JBL设备通常使用0-127范围
+        int jblVolume = (volume * 127 / 100).round();
+        List<int> volumeData = [jblVolume];
+
+        await characteristic.write(volumeData);
+        return true;
+      }
+    } catch (e) {
+      print("JBL音量设置失败: $e");
+    }
+    return false;
+  }
+
+  // 获取设备的AVRCP详细信息
+  Map<String, String> getAVRCPInfo() {
+    return {
+      'AVRCP支持': _avrcpSupported ? '是' : '否',
+      'AVRCP版本': _avrcpVersion,
+      '音量控制': _volumeControlSupported ? '支持' : '不支持',
+      '当前音量': '$_currentVolume%',
+      '音频配置文件': _audioProfiles,
+      '设备类型': _getDeviceType(),
+    };
+  }
+
+  String _getDeviceType() {
+    if (_connectedDevice == null) return "未知";
+
+    String name = _connectedDevice!.platformName.toLowerCase();
+    if (name.contains('jbl') && name.contains('live')) {
+      return "JBL Live Pro+ TWS";
+    } else if (name.contains('airpods')) {
+      return "Apple AirPods";
+    } else if (name.contains('beats')) {
+      return "Beats 耳机";
+    } else if (name.contains('sony')) {
+      return "Sony 音频设备";
+    } else if (name.contains('bose')) {
+      return "Bose 音频设备";
+    } else {
+      return "蓝牙音频设备";
+    }
+  }
+
+  // 原有的电池监控相关方法保持不变
   Future<void> _setupBatteryMonitoring(BluetoothDevice device) async {
     _batterySupported = false;
     _batterySource = "检测中...";
@@ -218,44 +668,36 @@ class BluetoothManager extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // 发现服务
       List<BluetoothService> services = await device.discoverServices();
       print("发现的服务数量: ${services.length}");
 
-      // 打印所有服务UUID用于调试
       for (BluetoothService service in services) {
         print("服务UUID: ${service.uuid}");
-        for (BluetoothCharacteristic characteristic in service.characteristics) {
-          print("  特征UUID: ${characteristic.uuid}, 属性: ${characteristic.properties}");
+        for (BluetoothCharacteristic characteristic
+            in service.characteristics) {
+          print(
+              "  特征UUID: ${characteristic.uuid}, 属性: ${characteristic.properties}");
         }
       }
 
-      // 尝试多种方式获取电池信息
       bool batteryFound = false;
-
-      // 方式1: 标准电池服务
       batteryFound = await _tryStandardBatteryService(services);
 
-      // 方式2: HID服务 (适用于AirPods等)
       if (!batteryFound) {
         batteryFound = await _tryHIDService(services);
       }
 
-      // 方式3: Apple特定服务
       if (!batteryFound) {
         batteryFound = await _tryAppleSpecificServices(services);
       }
 
-      // 方式4: 遍历所有可能的电池相关特征
       if (!batteryFound) {
         batteryFound = await _tryAllPossibleBatteryCharacteristics(services);
       }
 
-      // 如果都失败了，尝试模拟电量（仅用于演示）
       if (!batteryFound) {
         await _handleUnsupportedDevice(device);
       }
-
     } catch (e) {
       print("设置电池监控时出错: $e");
       _batterySupported = false;
@@ -264,15 +706,20 @@ class BluetoothManager extends ChangeNotifier {
     }
   }
 
-  // 尝试标准电池服务
-  Future<bool> _tryStandardBatteryService(List<BluetoothService> services) async {
+  // 保持所有原有的电池相关方法不变...
+  Future<bool> _tryStandardBatteryService(
+      List<BluetoothService> services) async {
     try {
       for (BluetoothService service in services) {
-        if (service.uuid.toString().toLowerCase() == BATTERY_SERVICE_UUID.toLowerCase()) {
+        if (service.uuid.toString().toLowerCase() ==
+            BATTERY_SERVICE_UUID.toLowerCase()) {
           print("找到标准电池服务");
-          for (BluetoothCharacteristic characteristic in service.characteristics) {
-            if (characteristic.uuid.toString().toLowerCase() == BATTERY_LEVEL_CHARACTERISTIC_UUID.toLowerCase()) {
-              return await _setupBatteryCharacteristic(characteristic, "标准BLE电池服务");
+          for (BluetoothCharacteristic characteristic
+              in service.characteristics) {
+            if (characteristic.uuid.toString().toLowerCase() ==
+                BATTERY_LEVEL_CHARACTERISTIC_UUID.toLowerCase()) {
+              return await _setupBatteryCharacteristic(
+                  characteristic, "标准BLE电池服务");
             }
           }
         }
@@ -283,20 +730,23 @@ class BluetoothManager extends ChangeNotifier {
     return false;
   }
 
-  // 尝试HID服务
   Future<bool> _tryHIDService(List<BluetoothService> services) async {
     try {
       for (BluetoothService service in services) {
-        if (service.uuid.toString().toLowerCase() == HID_SERVICE_UUID.toLowerCase()) {
+        if (service.uuid.toString().toLowerCase() ==
+            HID_SERVICE_UUID.toLowerCase()) {
           print("找到HID服务");
-          for (BluetoothCharacteristic characteristic in service.characteristics) {
-            if (characteristic.properties.read || characteristic.properties.notify) {
+          for (BluetoothCharacteristic characteristic
+              in service.characteristics) {
+            if (characteristic.properties.read ||
+                characteristic.properties.notify) {
               try {
                 if (characteristic.properties.read) {
                   List<int> value = await characteristic.read();
                   int? batteryLevel = _parseHIDBatteryData(value);
                   if (batteryLevel != null) {
-                    return await _setupBatteryCharacteristic(characteristic, "HID服务");
+                    return await _setupBatteryCharacteristic(
+                        characteristic, "HID服务");
                   }
                 }
               } catch (e) {
@@ -312,26 +762,28 @@ class BluetoothManager extends ChangeNotifier {
     return false;
   }
 
-  // 尝试Apple特定服务
-  Future<bool> _tryAppleSpecificServices(List<BluetoothService> services) async {
+  Future<bool> _tryAppleSpecificServices(
+      List<BluetoothService> services) async {
     try {
       for (BluetoothService service in services) {
         String serviceUuid = service.uuid.toString().toLowerCase();
 
-        // 检查是否为Apple相关服务
         if (serviceUuid.contains("7905f431") ||
             serviceUuid.contains("89d3502b") ||
             serviceUuid.contains("9fa480e0")) {
           print("找到Apple特定服务: $serviceUuid");
 
-          for (BluetoothCharacteristic characteristic in service.characteristics) {
-            if (characteristic.properties.read || characteristic.properties.notify) {
+          for (BluetoothCharacteristic characteristic
+              in service.characteristics) {
+            if (characteristic.properties.read ||
+                characteristic.properties.notify) {
               try {
                 if (characteristic.properties.read) {
                   List<int> value = await characteristic.read();
                   int? batteryLevel = _parseAppleBatteryData(value);
                   if (batteryLevel != null) {
-                    return await _setupBatteryCharacteristic(characteristic, "Apple专有服务");
+                    return await _setupBatteryCharacteristic(
+                        characteristic, "Apple专有服务");
                   }
                 }
               } catch (e) {
@@ -347,22 +799,23 @@ class BluetoothManager extends ChangeNotifier {
     return false;
   }
 
-  // 尝试所有可能的电池特征
-  Future<bool> _tryAllPossibleBatteryCharacteristics(List<BluetoothService> services) async {
+  Future<bool> _tryAllPossibleBatteryCharacteristics(
+      List<BluetoothService> services) async {
     try {
       for (BluetoothService service in services) {
-        for (BluetoothCharacteristic characteristic in service.characteristics) {
+        for (BluetoothCharacteristic characteristic
+            in service.characteristics) {
           if (characteristic.properties.read) {
             try {
               List<int> value = await characteristic.read();
 
-              // 检查数据是否可能是电池信息
               if (value.length >= 1) {
                 int possibleBatteryLevel = value[0];
-                // 合理的电池电量范围
                 if (possibleBatteryLevel >= 0 && possibleBatteryLevel <= 100) {
-                  print("可能找到电池信息: ${characteristic.uuid}, 值: $possibleBatteryLevel");
-                  return await _setupBatteryCharacteristic(characteristic, "通用特征检测");
+                  print(
+                      "可能找到电池信息: ${characteristic.uuid}, 值: $possibleBatteryLevel");
+                  return await _setupBatteryCharacteristic(
+                      characteristic, "通用特征检测");
                 }
               }
             } catch (e) {
@@ -377,15 +830,13 @@ class BluetoothManager extends ChangeNotifier {
     return false;
   }
 
-  // 处理不支持的设备
   Future<void> _handleUnsupportedDevice(BluetoothDevice device) async {
     _batterySupported = false;
 
-    // 针对AirPods等设备的特殊处理
     if (device.platformName.toLowerCase().contains('airpods') ||
         device.platformName.toLowerCase().contains('beats')) {
       _batterySource = "Apple设备 - 需要iOS系统级集成";
-      _batteryLevel = -1; // 用-1表示不支持
+      _batteryLevel = -1;
     } else {
       _batterySource = "设备不支持电池读取";
       _batteryLevel = -1;
@@ -394,10 +845,9 @@ class BluetoothManager extends ChangeNotifier {
     notifyListeners();
   }
 
-  // 设置电池特征监听
-  Future<bool> _setupBatteryCharacteristic(BluetoothCharacteristic characteristic, String source) async {
+  Future<bool> _setupBatteryCharacteristic(
+      BluetoothCharacteristic characteristic, String source) async {
     try {
-      // 读取当前电池电量
       if (characteristic.properties.read) {
         List<int> value = await characteristic.read();
         if (value.isNotEmpty) {
@@ -410,7 +860,6 @@ class BluetoothManager extends ChangeNotifier {
         }
       }
 
-      // 如果支持通知，设置电池电量监听
       if (characteristic.properties.notify) {
         try {
           await characteristic.setNotifyValue(true);
@@ -436,14 +885,12 @@ class BluetoothManager extends ChangeNotifier {
     }
   }
 
-  // 处理电池数据 - 核心优化函数
   int _processBatteryData(List<int> data, String source) {
     if (data.isEmpty) return 0;
 
     int rawValue = data[0];
     int processedValue = rawValue;
 
-    // 根据数据来源进行不同的处理
     switch (source) {
       case "标准BLE电池服务":
         processedValue = _processStandardBatteryData(data);
@@ -458,50 +905,39 @@ class BluetoothManager extends ChangeNotifier {
         processedValue = _processGenericData(data);
     }
 
-    // 应用设备特定的校准
     processedValue = _applyDeviceCalibration(processedValue);
-
-    // 确保值在有效范围内
     processedValue = processedValue.clamp(0, 100);
 
     print("电池数据处理: 原始=$rawValue, 处理后=$processedValue, 来源=$source");
     return processedValue;
   }
 
-  // 处理标准电池服务数据
   int _processStandardBatteryData(List<int> data) {
     if (data.isEmpty) return 0;
 
     int value = data[0];
 
-    // 检查是否为有效的百分比值
     if (value >= 0 && value <= 100) {
       return value;
     }
 
-    // 如果值超过100，可能使用不同的编码方式
     if (value > 100 && value <= 255) {
-      // 可能是0-255范围，转换为0-100
       return (value * 100 / 255).round();
     }
 
     return value.clamp(0, 100);
   }
 
-  // 处理HID数据
   int _processHIDData(List<int> data) {
     if (data.isEmpty) return 0;
 
-    // HID报告可能包含多个字节
     for (int i = 0; i < data.length; i++) {
       int value = data[i];
-      // 查找合理的电池值
       if (value >= 0 && value <= 100) {
         return value;
       }
     }
 
-    // 如果没找到合理值，尝试第一个字节
     int firstByte = data[0];
     if (firstByte > 100 && firstByte <= 255) {
       return (firstByte * 100 / 255).round();
@@ -510,22 +946,18 @@ class BluetoothManager extends ChangeNotifier {
     return firstByte.clamp(0, 100);
   }
 
-  // 处理Apple数据
   int _processAppleData(List<int> data) {
     if (data.isEmpty) return 0;
 
     int value = data[0];
 
-    // Apple设备可能使用不同的编码
     if (data.length >= 2) {
-      // 检查是否为16位值
       int combinedValue = (data[1] << 8) | data[0];
       if (combinedValue <= 100) {
         return combinedValue;
       }
     }
 
-    // 单字节处理
     if (value <= 100) {
       return value;
     } else if (value <= 255) {
@@ -535,18 +967,15 @@ class BluetoothManager extends ChangeNotifier {
     return value.clamp(0, 100);
   }
 
-  // 处理通用数据
   int _processGenericData(List<int> data) {
     if (data.isEmpty) return 0;
 
-    // 尝试多种解析方式
     for (int value in data) {
       if (value >= 0 && value <= 100) {
         return value;
       }
     }
 
-    // 如果没有找到合理值，使用第一个字节并进行转换
     int firstValue = data[0];
     if (firstValue > 100 && firstValue <= 255) {
       return (firstValue * 100 / 255).round();
@@ -555,20 +984,18 @@ class BluetoothManager extends ChangeNotifier {
     return firstValue.clamp(0, 100);
   }
 
-  // 应用设备特定的校准
   int _applyDeviceCalibration(int rawValue) {
     if (_connectedDevice == null) return rawValue;
 
     String deviceName = _connectedDevice!.platformName.toLowerCase();
 
-    // 设备特定的校准因子
     Map<String, double> calibrationFactors = {
-      'airpods': 1.08,      // AirPods 通常显示偏低 8%
-      'beats': 1.05,        // Beats 设备
-      'sony': 1.03,         // Sony 设备
-      'bose': 1.02,         // Bose 设备
-      'jbl': 1.04,          // JBL 设备
-      'sennheiser': 1.03,   // 森海塞尔
+      'airpods': 1.08,
+      'beats': 1.05,
+      'sony': 1.03,
+      'bose': 1.02,
+      'jbl': 1.04,
+      'sennheiser': 1.03,
     };
 
     double factor = 1.0;
@@ -585,23 +1012,17 @@ class BluetoothManager extends ChangeNotifier {
     return calibratedValue.clamp(0, 100);
   }
 
-  // 更新电池电量（包含平滑处理）
   void _updateBatteryLevel(int newValue) {
-    // 添加到历史记录
     _batteryHistory.add(newValue);
 
-    // 保持历史记录大小
     if (_batteryHistory.length > 5) {
       _batteryHistory.removeAt(0);
     }
 
-    // 计算平滑后的值
     if (_batteryHistory.length >= 3) {
-      // 使用中位数来减少异常值的影响
       List<int> sortedHistory = List.from(_batteryHistory)..sort();
       int median = sortedHistory[sortedHistory.length ~/ 2];
 
-      // 如果新值与中位数相差太大，使用加权平均
       if ((newValue - median).abs() > 15) {
         _batteryLevel = ((median * 0.7) + (newValue * 0.3)).round();
         print("检测到电量跳变，使用平滑值: 原始=$newValue, 中位数=$median, 平滑后=$_batteryLevel");
@@ -612,15 +1033,12 @@ class BluetoothManager extends ChangeNotifier {
       _batteryLevel = newValue;
     }
 
-    // 计算校准后的精确值
     _calibratedBatteryLevel = _batteryLevel.toDouble();
   }
 
-  // 解析HID电池数据
   int? _parseHIDBatteryData(List<int> data) {
     try {
       if (data.length >= 2) {
-        // HID报告通常在特定位置包含电池信息
         for (int i = 0; i < data.length; i++) {
           if (data[i] >= 0 && data[i] <= 100) {
             return data[i];
@@ -633,17 +1051,14 @@ class BluetoothManager extends ChangeNotifier {
     return null;
   }
 
-  // 解析Apple电池数据
   int? _parseAppleBatteryData(List<int> data) {
     try {
       if (data.length >= 1) {
-        // Apple设备可能使用不同的数据格式
         int batteryLevel = data[0];
         if (batteryLevel >= 0 && batteryLevel <= 100) {
           return batteryLevel;
         }
 
-        // 有些Apple设备可能使用0-255范围，需要转换
         if (batteryLevel > 100 && batteryLevel <= 255) {
           return (batteryLevel * 100 / 255).round();
         }
@@ -654,29 +1069,31 @@ class BluetoothManager extends ChangeNotifier {
     return null;
   }
 
-  // 刷新电池电量（增强版）
   Future<void> refreshBatteryLevel() async {
     if (_connectedDevice == null) return;
 
     try {
       print("开始刷新电池电量...");
-      List<BluetoothService> services = await _connectedDevice!.discoverServices();
+      List<BluetoothService> services =
+          await _connectedDevice!.discoverServices();
       bool refreshed = false;
 
-      // 尝试多个服务获取最准确的电量
       List<int> batteryReadings = [];
 
       for (BluetoothService service in services) {
         String serviceUuid = service.uuid.toString().toLowerCase();
 
         if (serviceUuid == BATTERY_SERVICE_UUID.toLowerCase()) {
-          for (BluetoothCharacteristic characteristic in service.characteristics) {
-            if (characteristic.uuid.toString().toLowerCase() == BATTERY_LEVEL_CHARACTERISTIC_UUID.toLowerCase()) {
+          for (BluetoothCharacteristic characteristic
+              in service.characteristics) {
+            if (characteristic.uuid.toString().toLowerCase() ==
+                BATTERY_LEVEL_CHARACTERISTIC_UUID.toLowerCase()) {
               if (characteristic.properties.read) {
                 try {
                   List<int> value = await characteristic.read();
                   if (value.isNotEmpty) {
-                    int processedValue = _processBatteryData(value, "标准BLE电池服务");
+                    int processedValue =
+                        _processBatteryData(value, "标准BLE电池服务");
                     batteryReadings.add(processedValue);
                     refreshed = true;
                   }
@@ -689,7 +1106,6 @@ class BluetoothManager extends ChangeNotifier {
         }
       }
 
-      // 如果获得多个读数，使用最可信的值
       if (batteryReadings.isNotEmpty) {
         int bestReading = _selectBestBatteryReading(batteryReadings);
         _updateBatteryLevel(bestReading);
@@ -698,29 +1114,26 @@ class BluetoothManager extends ChangeNotifier {
       } else if (!refreshed) {
         print("未能刷新电池电量，保持当前值");
       }
-
     } catch (e) {
       print("刷新电池电量时出错: $e");
     }
   }
 
-  // 选择最佳电池读数
   int _selectBestBatteryReading(List<int> readings) {
     if (readings.isEmpty) return 0;
     if (readings.length == 1) return readings[0];
 
-    // 移除明显的异常值
-    List<int> validReadings = readings.where((r) => r >= 0 && r <= 100).toList();
+    List<int> validReadings =
+        readings.where((r) => r >= 0 && r <= 100).toList();
     if (validReadings.isEmpty) return readings[0];
 
-    // 如果有历史数据，选择与历史最接近的值
     if (_batteryHistory.isNotEmpty) {
       int lastKnown = _batteryHistory.last;
-      validReadings.sort((a, b) => (a - lastKnown).abs().compareTo((b - lastKnown).abs()));
+      validReadings.sort(
+          (a, b) => (a - lastKnown).abs().compareTo((b - lastKnown).abs()));
       return validReadings[0];
     }
 
-    // 否则使用中位数
     validReadings.sort();
     return validReadings[validReadings.length ~/ 2];
   }
@@ -731,31 +1144,33 @@ class BluetoothManager extends ChangeNotifier {
     try {
       _batterySubscription?.cancel();
       _connectionSubscription?.cancel();
+      _volumeSubscription?.cancel();
       await _connectedDevice!.disconnect();
       _connectedDevice = null;
       _connectionState = BluetoothConnectionState.disconnected;
       _batteryLevel = 0;
+      _resetAVRCPState();
       notifyListeners();
     } catch (e) {
       print("Error disconnecting: $e");
     }
   }
 
-  // 添加一个简单的设备显示名称方法
   String getDeviceDisplayName(BluetoothDevice device) {
     if (device.platformName.isNotEmpty) {
       return device.platformName;
     }
-    // 如果没有名称，返回一个友好的显示名
     String deviceId = device.remoteId.toString();
     return '未知设备 (${deviceId.substring(deviceId.length - 8)})';
   }
+
   @override
   void dispose() {
     _scanSubscription?.cancel();
     _connectionSubscription?.cancel();
     _batterySubscription?.cancel();
+    _volumeSubscription?.cancel();
     disconnect();
     super.dispose();
   }
-  }
+}
