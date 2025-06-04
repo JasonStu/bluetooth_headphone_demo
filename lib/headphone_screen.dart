@@ -1478,12 +1478,29 @@ class HeadphoneScreen extends StatelessWidget {
     );
   }
 
-  void _showDeviceInfoDialog(BuildContext context, BluetoothDevice device) {
+  void _showDeviceInfoDialog(BuildContext context, BluetoothDevice device,
+      [bool? isBonded]) {
+    bool deviceIsBonded = isBonded ?? false;
+
     showDialog(
       context: context,
       builder: (context) {
         return AlertDialog(
-          title: Text('${device.platformName} 详细信息'),
+          title: Row(
+            children: [
+              Icon(
+                deviceIsBonded ? Icons.verified : Icons.bluetooth,
+                color: deviceIsBonded ? Colors.green : Colors.blue,
+              ),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '${device.platformName.isNotEmpty ? device.platformName : "未知设备"}',
+                  style: TextStyle(fontSize: 16),
+                ),
+              ),
+            ],
+          ),
           content: SingleChildScrollView(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1495,7 +1512,61 @@ class HeadphoneScreen extends StatelessWidget {
                         ? device.platformName
                         : '未知设备'),
                 _buildDeviceInfoRow('设备ID', device.remoteId.toString()),
-                _buildDeviceInfoRow('是否已连接', device.isConnected ? '是' : '否'),
+                _buildDeviceInfoRow('连接状态', device.isConnected ? '已连接' : '未连接'),
+                _buildDeviceInfoRow('系统配对', deviceIsBonded ? '已配对' : '未配对'),
+                SizedBox(height: 12),
+                Container(
+                  padding: EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: deviceIsBonded
+                        ? Colors.green.shade50
+                        : Colors.orange.shade50,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                      color: deviceIsBonded
+                          ? Colors.green.shade200
+                          : Colors.orange.shade200,
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            deviceIsBonded ? Icons.check_circle : Icons.warning,
+                            size: 16,
+                            color:
+                                deviceIsBonded ? Colors.green : Colors.orange,
+                          ),
+                          SizedBox(width: 8),
+                          Text(
+                            deviceIsBonded ? 'AVRCP状态优良' : 'AVRCP功能受限',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                              color: deviceIsBonded
+                                  ? Colors.green.shade700
+                                  : Colors.orange.shade700,
+                            ),
+                          ),
+                        ],
+                      ),
+                      SizedBox(height: 4),
+                      Text(
+                        deviceIsBonded
+                            ? '✅ 系统已配对，支持完整AVRCP功能和绝对音量控制'
+                            : '⚠️ 未系统配对，AVRCP功能可能受限，建议先在系统设置中配对',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: deviceIsBonded
+                              ? Colors.green.shade600
+                              : Colors.orange.shade600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
@@ -1503,6 +1574,68 @@ class HeadphoneScreen extends StatelessWidget {
             TextButton(
               onPressed: Navigator.of(context).pop,
               child: Text('关闭'),
+            ),
+            if (!deviceIsBonded) ...[
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  _showPairingInstructions(context, device);
+                },
+                child: Text('配对指导'),
+              ),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
+  void _showPairingInstructions(BuildContext context, BluetoothDevice device) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text('系统配对指导'),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '为了获得完整的AVRCP功能，请在系统设置中配对 ${device.platformName}:',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                SizedBox(height: 12),
+                _buildStepItem('1', '打开手机的"设置"应用'),
+                _buildStepItem('2', '找到并点击"蓝牙"设置'),
+                _buildStepItem('3', '确保设备处于配对模式'),
+                _buildStepItem('4', '在可用设备列表中找到"${device.platformName}"'),
+                _buildStepItem('5', '点击设备名称并确认配对'),
+                _buildStepItem('6', '配对成功后返回本应用重新扫描'),
+                SizedBox(height: 12),
+                Container(
+                  padding: EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: Colors.blue.shade200),
+                  ),
+                  child: Text(
+                    '💡 系统配对后，设备将显示绿色"配对"标记，AVRCP音量控制功能将完全可用！',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.blue.shade700,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: Navigator.of(context).pop,
+              child: Text('我知道了'),
             ),
           ],
         );
@@ -1512,7 +1645,11 @@ class HeadphoneScreen extends StatelessWidget {
 
   Widget _buildDeviceList(
       BuildContext context, BluetoothManager bluetoothManager) {
-    if (bluetoothManager.discoveredDevices.isEmpty) {
+    // 获取所有可用设备（已配对 + 发现的）
+    List<BluetoothDevice> allDevices =
+        bluetoothManager.getAllAvailableDevices();
+
+    if (allDevices.isEmpty && !bluetoothManager.isScanning) {
       return Card(
         elevation: 4,
         child: Padding(
@@ -1520,15 +1657,13 @@ class HeadphoneScreen extends StatelessWidget {
           child: Column(
             children: [
               Icon(
-                bluetoothManager.isScanning
-                    ? Icons.bluetooth_searching
-                    : Icons.bluetooth_disabled,
+                Icons.bluetooth_disabled,
                 size: 64,
                 color: Colors.grey.shade400,
               ),
               SizedBox(height: 16),
               Text(
-                bluetoothManager.isScanning ? '正在搜索设备...' : '未发现设备',
+                '未发现设备',
                 style: TextStyle(
                   fontSize: 16,
                   color: Colors.grey.shade600,
@@ -1536,27 +1671,23 @@ class HeadphoneScreen extends StatelessWidget {
               ),
               SizedBox(height: 8),
               Text(
-                bluetoothManager.isScanning
-                    ? '请稍候，正在搜索附近的蓝牙设备'
-                    : '请确保蓝牙设备处于配对模式并点击扫描',
+                '请确保设备处于配对模式并点击扫描',
                 style: TextStyle(
                   fontSize: 12,
                   color: Colors.grey.shade500,
                 ),
                 textAlign: TextAlign.center,
               ),
-              if (!bluetoothManager.isScanning) ...[
-                SizedBox(height: 16),
-                ElevatedButton.icon(
-                  onPressed: () => bluetoothManager.startScan(),
-                  icon: Icon(Icons.refresh),
-                  label: Text('重新扫描'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blue,
-                    foregroundColor: Colors.white,
-                  ),
+              SizedBox(height: 16),
+              ElevatedButton.icon(
+                onPressed: () => bluetoothManager.startScan(),
+                icon: Icon(Icons.refresh),
+                label: Text('扫描设备'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blue,
+                  foregroundColor: Colors.white,
                 ),
-              ],
+              ),
             ],
           ),
         ),
@@ -1573,12 +1704,26 @@ class HeadphoneScreen extends StatelessWidget {
             child: Row(
               children: [
                 Expanded(
-                  child: Text(
-                    '发现的设备 (${bluetoothManager.discoveredDevices.length})',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '可用设备 (${allDevices.length})',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      if (bluetoothManager.bondedDevices.isNotEmpty) ...[
+                        Text(
+                          '系统已配对: ${bluetoothManager.bondedDevices.length} | 新发现: ${bluetoothManager.discoveredDevices.length}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
                 if (!bluetoothManager.isScanning) ...[
@@ -1597,79 +1742,144 @@ class HeadphoneScreen extends StatelessWidget {
               ],
             ),
           ),
+
+          // 设备列表
           ListView.separated(
             shrinkWrap: true,
             physics: NeverScrollableScrollPhysics(),
-            itemCount: bluetoothManager.discoveredDevices.length,
+            itemCount: allDevices.length,
             separatorBuilder: (context, index) => Divider(height: 1),
             itemBuilder: (context, index) {
-              BluetoothDevice device =
-                  bluetoothManager.discoveredDevices[index];
+              BluetoothDevice device = allDevices[index];
               bool isConnected = bluetoothManager.connectedDevice == device;
+              bool isBonded = bluetoothManager.isDeviceBonded(device);
               String displayName =
                   bluetoothManager.getDeviceDisplayName(device);
 
               return ListTile(
-                  leading: Icon(
-                    _getDeviceIcon(displayName),
-                    color: isConnected ? Colors.green : Colors.blue,
-                    size: 32,
-                  ),
-                  title: Text(
-                    displayName,
-                    style: TextStyle(
-                      fontWeight:
-                          isConnected ? FontWeight.bold : FontWeight.normal,
-                      color: isConnected ? Colors.green : null,
+                leading: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      _getDeviceIcon(displayName),
+                      color: isConnected
+                          ? Colors.green
+                          : (isBonded ? Colors.blue : Colors.grey),
+                      size: 28,
                     ),
-                  ),
-                  subtitle: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'ID: ${device.remoteId.toString().substring(0, 8)}...',
-                        style: TextStyle(fontSize: 11),
+                    if (isBonded) ...[
+                      Container(
+                        margin: EdgeInsets.only(top: 2),
+                        padding:
+                            EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: Colors.green,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          '配对',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 8,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                       ),
-                      if (isConnected) ...[
-                        Text(
-                          '已连接',
-                          style: TextStyle(
-                            color: Colors.green,
-                            fontWeight: FontWeight.w500,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ] else ...[
-                        Text(
-                          _getDeviceTypeDescription(displayName),
-                          style: TextStyle(
-                            color: Colors.blue.shade600,
-                            fontSize: 11,
-                          ),
-                        ),
-                      ],
                     ],
-                  ),
-                  trailing: isConnected
-                      ? Icon(Icons.check_circle, color: Colors.green)
-                      : ElevatedButton(
-                          onPressed: bluetoothManager.connectionState ==
-                                  BluetoothConnectionState.connecting
-                              ? null
-                              : () => _connectToDevice(
-                                  context, bluetoothManager, device),
-                          child: Text('连接', style: TextStyle(fontSize: 12)),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.blue,
-                            foregroundColor: Colors.white,
-                            padding: EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 8),
-                            minimumSize: Size(0, 32),
-                          ),
+                  ],
+                ),
+                title: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        displayName,
+                        style: TextStyle(
+                          fontWeight:
+                              isConnected ? FontWeight.bold : FontWeight.normal,
+                          color: isConnected ? Colors.green : null,
                         ),
-                  onTap: () => _showDeviceInfoDialog(context, device));
+                      ),
+                    ),
+                    if (isBonded) ...[
+                      Icon(
+                        Icons.check_circle,
+                        size: 16,
+                        color: Colors.green,
+                      ),
+                    ],
+                  ],
+                ),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'ID: ${device.remoteId.toString().substring(0, 8)}...',
+                      style: TextStyle(fontSize: 11),
+                    ),
+                    Row(
+                      children: [
+                        if (isConnected) ...[
+                          Icon(Icons.link, size: 12, color: Colors.green),
+                          SizedBox(width: 4),
+                          Text(
+                            '已连接',
+                            style: TextStyle(
+                              color: Colors.green,
+                              fontWeight: FontWeight.w500,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ] else if (isBonded) ...[
+                          Icon(Icons.verified, size: 12, color: Colors.blue),
+                          SizedBox(width: 4),
+                          Text(
+                            '系统已配对 - 推荐连接',
+                            style: TextStyle(
+                              color: Colors.blue.shade600,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ] else ...[
+                          Icon(Icons.bluetooth_searching,
+                              size: 12, color: Colors.grey),
+                          SizedBox(width: 4),
+                          Text(
+                            '新发现设备',
+                            style: TextStyle(
+                              color: Colors.grey.shade600,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ],
+                ),
+                trailing: isConnected
+                    ? Icon(Icons.check_circle, color: Colors.green)
+                    : ElevatedButton(
+                        onPressed: bluetoothManager.connectionState ==
+                                BluetoothConnectionState.connecting
+                            ? null
+                            : () => _connectToDevice(
+                                context, bluetoothManager, device),
+                        child: Text('连接', style: TextStyle(fontSize: 12)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor:
+                              isBonded ? Colors.green : Colors.blue,
+                          foregroundColor: Colors.white,
+                          padding:
+                              EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          minimumSize: Size(0, 32),
+                        ),
+                      ),
+                onTap: () => _showDeviceInfoDialog(context, device, isBonded),
+              );
             },
           ),
+
+          // 提示信息
           Padding(
             padding: EdgeInsets.all(16),
             child: Container(
@@ -1679,18 +1889,31 @@ class HeadphoneScreen extends StatelessWidget {
                 borderRadius: BorderRadius.circular(6),
                 border: Border.all(color: Colors.blue.shade200),
               ),
-              child: Row(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(Icons.info_outline,
-                      size: 16, color: Colors.blue.shade600),
-                  SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      '提示：连接后会自动检测AVRCP支持情况和音量控制功能。',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: Colors.blue.shade700,
+                  Row(
+                    children: [
+                      Icon(Icons.info_outline,
+                          size: 16, color: Colors.blue.shade600),
+                      SizedBox(width: 8),
+                      Text(
+                        '设备状态说明:',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.blue.shade700,
+                        ),
                       ),
+                    ],
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    '• 🟢 系统已配对设备 - 完整AVRCP功能，推荐连接\n'
+                    '• 🔵 新发现设备 - 仅基础功能，建议先在系统设置中配对',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.blue.shade700,
                     ),
                   ),
                 ],
